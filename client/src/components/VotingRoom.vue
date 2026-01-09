@@ -71,7 +71,7 @@ const props = defineProps({
 const users = ref(props.initialSessionState.users || []);
 const votes = ref(props.initialSessionState.votes || {});
 const allVoted = ref(props.initialSessionState.allVoted || false);
-const hasVoted = ref(props.initialSessionState.hasVoted || false);
+const hasVoted = ref(false);
 const userVote = ref(null);
 
 const socketId = computed(() => socketService.getSocketId());
@@ -100,7 +100,9 @@ function updateSessionState(state) {
   users.value = state.users || [];
   votes.value = state.votes || {};
   allVoted.value = state.allVoted || false;
-  hasVoted.value = state.hasVoted || false;
+  
+  // Calculate hasVoted based on current user's socket ID
+  hasVoted.value = socketId.value ? (socketId.value in votes.value) : false;
   
   // Update user's vote display
   if (socketId.value && votes.value[socketId.value]) {
@@ -117,7 +119,17 @@ onMounted(() => {
     users.value = data.users || users.value;
     votes.value = data.votes || votes.value;
     allVoted.value = data.allVoted || false;
+    // Recalculate hasVoted after user left
+    hasVoted.value = socketId.value ? (socketId.value in votes.value) : false;
   });
+  
+  // Initialize hasVoted from initial state
+  if (socketId.value && props.initialSessionState.votes) {
+    hasVoted.value = socketId.value in props.initialSessionState.votes;
+    if (hasVoted.value) {
+      userVote.value = props.initialSessionState.votes[socketId.value];
+    }
+  }
 });
 
 onUnmounted(() => {

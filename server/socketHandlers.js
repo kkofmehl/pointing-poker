@@ -29,8 +29,7 @@ export function setupSocketHandlers(io) {
           votes: updatedSession.allVoted 
             ? Object.fromEntries(updatedSession.votes) 
             : {},
-          allVoted: updatedSession.allVoted,
-          hasVoted: updatedSession.votes.has(socket.id)
+          allVoted: updatedSession.allVoted
         });
 
         // Notify other users in the session
@@ -58,8 +57,7 @@ export function setupSocketHandlers(io) {
           votes: session.allVoted 
             ? Object.fromEntries(session.votes) 
             : {},
-          allVoted: session.allVoted,
-          hasVoted: session.votes.has(socket.id)
+          allVoted: session.allVoted
         };
 
         io.to(sessionId).emit('session_state', sessionState);
@@ -82,8 +80,7 @@ export function setupSocketHandlers(io) {
           sessionId: session.sessionId,
           users: Array.from(session.users.values()),
           votes: {},
-          allVoted: false,
-          hasVoted: false
+          allVoted: false
         };
 
         io.to(sessionId).emit('session_state', sessionState);
