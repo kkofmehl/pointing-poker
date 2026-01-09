@@ -98,7 +98,7 @@ function handleJoin() {
 
 h1 {
   font-size: 2.5rem;
-  color: #667eea;
+  color: #d32f2f;
   margin-bottom: 8px;
   text-align: center;
 }
@@ -138,7 +138,7 @@ label {
 
 .input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #d32f2f;
 }
 
 .btn {
@@ -152,14 +152,14 @@ label {
 }
 
 .btn-primary {
-  background: #667eea;
+  background: #d32f2f;
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #5568d3;
+  background: #b71c1c;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(211, 47, 47, 0.4);
 }
 
 .btn-primary:disabled {

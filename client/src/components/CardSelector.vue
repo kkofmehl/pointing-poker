@@ -3,17 +3,22 @@
     <h2>Select Your Estimate</h2>
     <div class="cards-grid">
       <button
-        v-for="value in cardValues"
-        :key="value"
-        @click="selectCard(value)"
-        :class="['card', { 'selected': selectedCard === value }]"
+        v-for="card in cardConfig"
+        :key="card.value"
+        @click="selectCard(card.value)"
+        :class="['card', { 'selected': selectedCard === card.value }]"
+        :style="{
+          backgroundColor: getCardColor(card.value),
+          borderColor: getCardColor(card.value)
+        }"
         :disabled="disabled"
       >
-        {{ value }}
+        <span v-if="card.icon" class="card-icon">{{ card.icon }}</span>
+        <span v-if="card.label" class="card-label">{{ card.label }}</span>
       </button>
     </div>
     <div v-if="selectedCard !== null" class="selected-info">
-      <p>Selected: <strong>{{ selectedCard }}</strong></p>
+      <p>Selected: <strong>{{ getSelectedCardLabel() }}</strong></p>
       <button @click="submitVote" class="btn btn-submit" :disabled="disabled || submitting">
         {{ submitting ? 'Submitting...' : 'Submit Vote' }}
       </button>
@@ -23,7 +28,7 @@
 
 <script setup>
 import { ref } from 'vue';
-import { CARD_VALUES } from '../config/cards.js';
+import { CARD_CONFIG, getCardColor, getCardConfig } from '../config/cards.js';
 
 const props = defineProps({
   disabled: {
@@ -38,7 +43,7 @@ const props = defineProps({
 
 const emit = defineEmits(['vote-submitted']);
 
-const cardValues = CARD_VALUES;
+const cardConfig = CARD_CONFIG;
 const selectedCard = ref(props.initialSelected);
 const submitting = ref(false);
 
@@ -60,6 +65,17 @@ function submitVote() {
   setTimeout(() => {
     submitting.value = false;
   }, 500);
+}
+
+function getSelectedCardLabel() {
+  const card = getCardConfig(selectedCard.value);
+  if (card) {
+    if (card.icon && !card.label) {
+      return card.icon;
+    }
+    return card.icon ? `${card.icon} ${card.label}` : card.label;
+  }
+  return selectedCard.value;
 }
 </script>
 
@@ -89,23 +105,45 @@ h2 {
   border-radius: 12px;
   font-size: 2rem;
   font-weight: bold;
-  color: #333;
+  color: white;
   cursor: pointer;
   transition: all 0.2s;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transform: scale(0.9);
 }
 
-.card:hover:not(:disabled) {
-  transform: translateY(-4px);
+.card-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.card-label {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.card:hover:not(:disabled):not(.selected) {
+  transform: scale(0.9) translateY(-4px);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-  border-color: #667eea;
+  border-color: #d32f2f;
+}
+
+.card.selected:hover:not(:disabled) {
+  transform: scale(1.1) translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
 .card.selected {
-  background: #667eea;
+  border-width: 4px;
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
   color: white;
-  border-color: #5568d3;
-  transform: scale(1.05);
+  filter: brightness(1.1);
 }
 
 .card:disabled {
@@ -114,8 +152,9 @@ h2 {
 }
 
 .selected-info {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 20px;
   border-radius: 12px;
   margin-top: 24px;
@@ -129,11 +168,11 @@ h2 {
 
 .btn-submit {
   background: white;
-  color: #667eea;
+  color: #d32f2f;
   padding: 12px 32px;
   font-size: 1rem;
   font-weight: 600;
-  border: none;
+  border: 2px solid #d32f2f;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
@@ -156,8 +195,12 @@ h2 {
     gap: 12px;
   }
   
-  .card {
+  .card-label {
     font-size: 1.5rem;
+  }
+  
+  .card-icon {
+    font-size: 2rem;
   }
 }
 </style>

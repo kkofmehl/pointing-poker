@@ -7,10 +7,12 @@
         v-for="user in users"
         :key="user.id"
         :class="['result-card', { 'current-user': user.name === userName }]"
+        :style="getCardStyle(votes[user.id])"
       >
         <div class="user-name">{{ user.name }}</div>
         <div class="vote-value">
-          {{ votes[user.id] !== undefined ? votes[user.id] : '—' }}
+          <span v-if="getVoteIcon(votes[user.id])" class="vote-icon">{{ getVoteIcon(votes[user.id]) }}</span>
+          <span v-if="getVoteDisplay(votes[user.id])">{{ getVoteDisplay(votes[user.id]) }}</span>
         </div>
       </div>
     </div>
@@ -34,6 +36,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { getCardColor, getCardConfig } from '../config/cards.js';
 
 const props = defineProps({
   users: {
@@ -50,10 +53,11 @@ const props = defineProps({
   }
 });
 
+// Exclude value 0 (Not Voting) from statistics
 const voteValues = computed(() => {
   return Object.values(props.votes)
     .map(v => typeof v === 'string' ? parseFloat(v) : v)
-    .filter(v => !isNaN(v));
+    .filter(v => !isNaN(v) && v !== 0);
 });
 
 const hasVotes = computed(() => {
@@ -75,6 +79,45 @@ const max = computed(() => {
   if (!hasVotes.value) return 0;
   return Math.max(...voteValues.value);
 });
+
+function getCardStyle(voteValue) {
+  if (voteValue === undefined || voteValue === null) {
+    return {};
+  }
+  const numValue = typeof voteValue === 'string' ? parseFloat(voteValue) : voteValue;
+  if (isNaN(numValue)) {
+    return {};
+  }
+  // Use uniform red for all cards except "Not Voting" (0) which stays gray
+  const color = numValue === 0 ? '#757575' : '#d32f2f';
+  return {
+    backgroundColor: color,
+    borderColor: color
+  };
+}
+
+function getVoteDisplay(voteValue) {
+  if (voteValue === undefined || voteValue === null) {
+    return '—';
+  }
+  const card = getCardConfig(voteValue);
+  if (card) {
+    // If card has an icon but no label (like "Not Voting"), return empty string
+    if (card.icon && !card.label) {
+      return '';
+    }
+    return card.label;
+  }
+  return voteValue;
+}
+
+function getVoteIcon(voteValue) {
+  if (voteValue === undefined || voteValue === null) {
+    return null;
+  }
+  const card = getCardConfig(voteValue);
+  return card ? card.icon : null;
+}
 </script>
 
 <style scoped>
@@ -98,10 +141,12 @@ const max = computed(() => {
 
 .result-card {
   background: white;
+  border: 3px solid #e0e0e0;
   border-radius: 12px;
   padding: 20px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: transform 0.2s;
+  color: #333;
 }
 
 .result-card:hover {
@@ -110,7 +155,7 @@ const max = computed(() => {
 }
 
 .result-card.current-user {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
   color: white;
   border: 3px solid #fff;
 }
@@ -130,10 +175,31 @@ const max = computed(() => {
   font-size: 2.5rem;
   font-weight: bold;
   color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.vote-icon {
+  font-size: 2.5rem;
+  line-height: 1;
 }
 
 .result-card.current-user .vote-value {
   color: white;
+}
+
+.result-card:not(.current-user) {
+  color: white;
+}
+
+.result-card:not(.current-user) .vote-value {
+  color: white;
+}
+
+.result-card:not(.current-user) .user-name {
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .statistics {
@@ -141,8 +207,9 @@ const max = computed(() => {
   justify-content: center;
   gap: 32px;
   flex-wrap: wrap;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 20px;
   border-radius: 12px;
 }

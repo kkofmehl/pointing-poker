@@ -147,8 +147,9 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 20px 30px;
   border-radius: 12px;
   margin-bottom: 24px;
@@ -178,12 +179,13 @@ onUnmounted(() => {
 
 .btn-secondary:hover {
   background: white;
-  color: #667eea;
+  color: #d32f2f;
 }
 
 .participants {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 20px;
   border-radius: 12px;
   margin-bottom: 24px;
@@ -202,8 +204,9 @@ onUnmounted(() => {
 }
 
 .user-badge {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
   color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 0.9rem;
@@ -223,8 +226,9 @@ onUnmounted(() => {
 }
 
 .voting-section {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 30px;
   border-radius: 12px;
 }
@@ -241,8 +245,9 @@ onUnmounted(() => {
 }
 
 .results-section {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(211, 47, 47, 0.15);
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(211, 47, 47, 0.2);
   padding: 30px;
   border-radius: 12px;
 }
