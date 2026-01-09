@@ -1,13 +1,30 @@
 import { sessionManager } from './sessionManager.js';
 
+// Helper function to broadcast active sessions to all clients
+function broadcastActiveSessions(io) {
+  const activeSessions = sessionManager.getAllActiveSessions();
+  io.emit('active_sessions_updated', { sessions: activeSessions });
+}
+
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
+
+    // Send initial active sessions list when client connects
+    const activeSessions = sessionManager.getAllActiveSessions();
+    socket.emit('active_sessions_updated', { sessions: activeSessions });
+
+    // Handle request for active sessions
+    socket.on('get_active_sessions', () => {
+      const activeSessions = sessionManager.getAllActiveSessions();
+      socket.emit('active_sessions_updated', { sessions: activeSessions });
+    });
 
     socket.on('join_session', ({ sessionId, userName }) => {
       try {
         // Create or join session
         let session = sessionManager.getSession(sessionId);
+        const wasNewSession = !session;
         if (!session) {
           session = sessionManager.createSession(sessionId);
         }
@@ -36,6 +53,11 @@ export function setupSocketHandlers(io) {
         socket.to(sessionId).emit('user_joined', {
           users: Array.from(updatedSession.users.values())
         });
+
+        // If this was a new session, broadcast updated active sessions list
+        if (wasNewSession) {
+          broadcastActiveSessions(io);
+        }
       } catch (error) {
         console.error('Error joining session:', error);
         socket.emit('error', { message: 'Error joining session' });
@@ -96,6 +118,7 @@ export function setupSocketHandlers(io) {
       // Find and remove user from their session
       for (const [sessionId, session] of sessionManager.sessions.entries()) {
         if (session.users.has(socket.id)) {
+          const wasLastUser = session.users.size === 1;
           const updatedSession = sessionManager.removeUser(sessionId, socket.id);
           
           if (updatedSession) {
@@ -107,6 +130,9 @@ export function setupSocketHandlers(io) {
                 : {},
               allVoted: updatedSession.allVoted
             });
+          } else if (wasLastUser) {
+            // Session was deleted (last user left), broadcast updated active sessions
+            broadcastActiveSessions(io);
           }
           break;
         }

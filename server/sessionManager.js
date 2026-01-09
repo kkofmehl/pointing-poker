@@ -95,6 +95,17 @@ class SessionManager {
   getSession(sessionId) {
     return this.sessions.get(sessionId);
   }
+
+  getAllActiveSessions() {
+    const sessions = [];
+    for (const [sessionId, session] of this.sessions.entries()) {
+      sessions.push({
+        sessionId,
+        participantCount: session.users.size
+      });
+    }
+    return sessions;
+  }
 }
 
 export const sessionManager = new SessionManager();
