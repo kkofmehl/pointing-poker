@@ -1,13 +1,16 @@
 <template>
   <div class="results-display">
-    <h2 class="results-title">All Votes Revealed!</h2>
+    <h2 class="results-title fade-in">All Votes Revealed!</h2>
     
     <div class="results-grid">
       <div
-        v-for="user in usersWithVotes"
+        v-for="(user, index) in usersWithVotes"
         :key="user.id"
-        :class="['result-card', { 'current-user': user.name === userName }]"
-        :style="getCardStyle(votes[user.id])"
+        :class="['result-card', 'fade-in', { 'current-user': user.name === userName }]"
+        :style="{
+          ...getCardStyle(votes[user.id]),
+          animationDelay: `${index * 0.16}s`
+        }"
       >
         <div class="user-name">{{ user.name }}</div>
         <div class="vote-value">
@@ -17,7 +20,7 @@
       </div>
     </div>
 
-    <div class="statistics" v-if="hasVotes">
+    <div class="statistics fade-in" v-if="hasVotes" :style="{ animationDelay: `${usersWithVotes.length * 0.08}s` }">
       <div class="stat-item">
         <span class="stat-label">Average:</span>
         <span class="stat-value">{{ average.toFixed(2) }}</span>
@@ -132,6 +135,22 @@ function getVoteIcon(voteValue) {
 <style scoped>
 .results-display {
   text-align: center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+  opacity: 0;
 }
 
 .results-title {
