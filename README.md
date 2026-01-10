@@ -94,12 +94,14 @@ pointing-poker/
 ## How to Use
 
 1. Open the application in your browser
-2. Enter a session ID (any string - e.g., "team-sprint-1")
-3. Enter your name
-4. Click "Join Session"
-5. Select your estimate card
-6. Submit your vote
-7. Wait for all participants to vote
-8. View all results once everyone has voted
-9. Click "New Round" to start a new voting round
+2. (Optional) Select an existing active session from the dropdown, or leave "Start new Session" selected to create a new one
+3. If creating a new session, a random session name will be automatically generated (e.g., "Superman's Den", "Gandalf's Tower")
+4. You can click the refresh button (🔄) to generate a different random session name
+5. Enter your name
+6. Click "Join Session"
+7. Select your estimate card
+8. Submit your vote
+9. Wait for all participants to vote
+10. View all results once everyone has voted
+11. Click "New Round" to start a new voting round
 

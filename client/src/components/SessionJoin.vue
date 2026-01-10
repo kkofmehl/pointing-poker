@@ -13,7 +13,7 @@
             class="input select"
             @change="onSessionSelectChange"
           >
-            <option value="">Create new session...</option>
+            <option value="">Start new Session</option>
             <option
               v-for="session in activeSessions"
               :key="session.sessionId"
@@ -24,17 +24,25 @@
           </select>
         </div>
         
-        <div class="form-group">
-          <label for="sessionId">Session ID</label>
-          <input
-            id="sessionId"
-            v-model="sessionId"
-            type="text"
-            placeholder="Enter session ID"
-            :required="!selectedSessionId"
-            :disabled="!!selectedSessionId"
-            class="input"
-          />
+        <div class="form-group" v-if="!selectedSessionId">
+          <label for="sessionName">Session Name</label>
+          <div class="session-name-display">
+            <input
+              id="sessionName"
+              :value="sessionId"
+              type="text"
+              readonly
+              class="input readonly"
+            />
+            <button
+              type="button"
+              @click="generateNewSessionName"
+              class="btn-refresh"
+              title="Generate new session name"
+            >
+              🔄
+            </button>
+          </div>
         </div>
         
         <div class="form-group">
@@ -64,10 +72,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { socketService } from '../services/socketService.js';
+import { generateSessionName } from '../utils/sessionNameGenerator.js';
 
 const emit = defineEmits(['joined']);
 
-const sessionId = ref('');
+const sessionId = ref(generateSessionName());
 const userName = ref('');
 const error = ref('');
 const activeSessions = ref([]);
@@ -80,14 +89,19 @@ const effectiveSessionId = computed(() => {
   return selectedSessionId.value || sessionId.value.trim();
 });
 
+// Generate a new random session name
+function generateNewSessionName() {
+  sessionId.value = generateSessionName();
+}
+
 // Handle session selection from dropdown
 function onSessionSelectChange() {
   if (selectedSessionId.value) {
-    // Populate text input for visual feedback, but dropdown value will be used
-    sessionId.value = selectedSessionId.value;
+    // When selecting an existing session, use that session ID
+    // sessionId is not used in this case, but we keep it for consistency
   } else {
-    // Clear text input when returning to "Create new session..."
-    sessionId.value = '';
+    // Generate a new random name when returning to "Start new Session"
+    generateNewSessionName();
   }
 }
 
@@ -250,6 +264,38 @@ label {
   border-radius: 8px;
   text-align: center;
   font-size: 0.9rem;
+}
+
+.session-name-display {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.session-name-display .readonly {
+  flex: 1;
+  background-color: #f5f5f5;
+  cursor: default;
+}
+
+.btn-refresh {
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.2s;
+  min-width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-refresh:hover {
+  border-color: #d32f2f;
+  background: #fff5f5;
+  transform: rotate(180deg);
 }
 </style>
 
