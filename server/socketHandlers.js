@@ -89,6 +89,31 @@ export function setupSocketHandlers(io) {
       }
     });
 
+    socket.on('retract_vote', ({ sessionId }) => {
+      try {
+        const session = sessionManager.removeVote(sessionId, socket.id);
+        if (!session) {
+          socket.emit('error', { message: 'Failed to retract vote' });
+          return;
+        }
+
+        // Broadcast updated state to all users in the session
+        const sessionState = {
+          sessionId: session.sessionId,
+          users: Array.from(session.users.values()),
+          votes: session.allVoted 
+            ? Object.fromEntries(session.votes) 
+            : {},
+          allVoted: session.allVoted
+        };
+
+        io.to(sessionId).emit('session_state', sessionState);
+      } catch (error) {
+        console.error('Error retracting vote:', error);
+        socket.emit('error', { message: 'Error retracting vote' });
+      }
+    });
+
     socket.on('reset_session', ({ sessionId }) => {
       try {
         const session = sessionManager.resetSession(sessionId);
@@ -109,6 +134,37 @@ export function setupSocketHandlers(io) {
       } catch (error) {
         console.error('Error resetting session:', error);
         socket.emit('error', { message: 'Error resetting session' });
+      }
+    });
+
+    socket.on('leave_session', ({ sessionId }) => {
+      try {
+        // Leave the socket room
+        socket.leave(sessionId);
+        
+        // Find and remove user from their session
+        const session = sessionManager.getSession(sessionId);
+        if (session && session.users.has(socket.id)) {
+          const wasLastUser = session.users.size === 1;
+          const updatedSession = sessionManager.removeUser(sessionId, socket.id);
+          
+          if (updatedSession) {
+            // Notify remaining users
+            io.to(sessionId).emit('user_left', {
+              users: Array.from(updatedSession.users.values()),
+              votes: updatedSession.allVoted 
+                ? Object.fromEntries(updatedSession.votes) 
+                : {},
+              allVoted: updatedSession.allVoted
+            });
+          } else if (wasLastUser) {
+            // Session was deleted (last user left), broadcast updated active sessions
+            broadcastActiveSessions(io);
+          }
+        }
+      } catch (error) {
+        console.error('Error leaving session:', error);
+        socket.emit('error', { message: 'Error leaving session' });
       }
     });
 

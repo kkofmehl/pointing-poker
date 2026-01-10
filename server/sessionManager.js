@@ -57,6 +57,27 @@ class SessionManager {
     return session;
   }
 
+  removeVote(sessionId, userId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    if (!session.users.has(userId)) {
+      return null;
+    }
+
+    // Remove the vote
+    session.votes.delete(userId);
+    
+    // Recalculate allVoted status - should be false if any user doesn't have a vote
+    const allVoted = session.users.size === session.votes.size && 
+                     session.users.size > 0;
+    session.allVoted = allVoted;
+
+    return session;
+  }
+
   resetSession(sessionId) {
     const session = this.sessions.get(sessionId);
     if (!session) {

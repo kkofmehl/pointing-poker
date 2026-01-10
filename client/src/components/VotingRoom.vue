@@ -5,9 +5,14 @@
         <h1>Session: {{ sessionId }}</h1>
         <p class="user-name">You: {{ userName }}</p>
       </div>
-      <button @click="handleReset" class="btn btn-secondary" v-if="allVoted">
-        New Round
-      </button>
+      <div class="header-actions">
+        <button @click="handleReset" class="btn btn-secondary" v-if="allVoted">
+          New Round
+        </button>
+        <button @click="handleLeaveSession" class="btn btn-leave">
+          Leave Session
+        </button>
+      </div>
     </div>
 
     <div class="participants">
@@ -29,6 +34,7 @@
         :disabled="hasVoted"
         :initial-selected="userVote"
         @vote-submitted="handleVoteSubmitted"
+        @vote-undo="handleVoteUndo"
       />
       
       <div v-if="hasVoted" class="waiting-message">
@@ -68,6 +74,8 @@ const props = defineProps({
   }
 });
 
+const emit = defineEmits(['leave']);
+
 const users = ref(props.initialSessionState.users || []);
 const votes = ref(props.initialSessionState.votes || {});
 const allVoted = ref(props.initialSessionState.allVoted || false);
@@ -90,10 +98,27 @@ function handleVoteSubmitted(cardValue) {
   hasVoted.value = true;
 }
 
+function handleVoteUndo() {
+  socketService.emit('retract_vote', {
+    sessionId: props.sessionId
+  });
+  
+  // Optimistically update local state
+  hasVoted.value = false;
+  userVote.value = null;
+}
+
 function handleReset() {
   socketService.emit('reset_session', {
     sessionId: props.sessionId
   });
+}
+
+function handleLeaveSession() {
+  socketService.emit('leave_session', {
+    sessionId: props.sessionId
+  });
+  emit('leave');
 }
 
 function updateSessionState(state) {
@@ -107,6 +132,9 @@ function updateSessionState(state) {
   // Update user's vote display
   if (socketId.value && votes.value[socketId.value]) {
     userVote.value = votes.value[socketId.value];
+  } else {
+    // Reset userVote when no vote exists (e.g., after reset or undo)
+    userVote.value = null;
   }
 }
 
@@ -121,6 +149,9 @@ onMounted(() => {
     allVoted.value = data.allVoted || false;
     // Recalculate hasVoted after user left
     hasVoted.value = socketId.value ? (socketId.value in votes.value) : false;
+    if (!hasVoted.value) {
+      userVote.value = null;
+    }
   });
   
   // Initialize hasVoted from initial state
@@ -180,6 +211,28 @@ onUnmounted(() => {
 .btn-secondary:hover {
   background: white;
   color: #d32f2f;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn-leave {
+  background: rgba(255, 87, 34, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 87, 34, 0.5);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-leave:hover {
+  background: rgba(255, 87, 34, 0.4);
+  border-color: rgba(255, 87, 34, 0.8);
 }
 
 .participants {
@@ -261,6 +314,15 @@ onUnmounted(() => {
   
   .session-info h1 {
     font-size: 1.4rem;
+  }
+  
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  
+  .header-actions .btn {
+    width: 100%;
   }
 }
 </style>

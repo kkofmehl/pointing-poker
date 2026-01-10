@@ -1,6 +1,7 @@
 <template>
   <div class="card-selector">
     <h2>Select Your Estimate</h2>
+    <p class="helper-text">All estimates will be displayed once everyone has submitted</p>
     <div class="cards-grid">
       <button
         v-for="card in cardConfig"
@@ -11,23 +12,32 @@
           backgroundColor: getCardColor(card.value),
           borderColor: getCardColor(card.value)
         }"
-        :disabled="disabled"
+        :disabled="disabled || voted"
       >
         <span v-if="card.icon" class="card-icon">{{ card.icon }}</span>
         <span v-if="card.label" class="card-label">{{ card.label }}</span>
       </button>
     </div>
-    <div v-if="selectedCard !== null" class="selected-info">
+    <div v-if="selectedCard !== null && !voted" class="selected-info">
       <p>Selected: <strong>{{ getSelectedCardLabel() }}</strong></p>
       <button @click="submitVote" class="btn btn-submit" :disabled="disabled || submitting">
-        {{ submitting ? 'Submitting...' : 'Submit Vote' }}
+        {{ submitting ? 'Submitting...' : 'Submit' }}
+      </button>
+    </div>
+    <div v-if="voted" class="submission-success">
+      <div class="success-message">
+        <span class="checkmark">✓</span>
+        <span>Vote submitted successfully!</span>
+      </div>
+      <button @click="handleUndo" class="btn btn-undo" :disabled="disabled">
+        Undo
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { CARD_CONFIG, getCardColor, getCardConfig } from '../config/cards.js';
 
 const props = defineProps({
@@ -41,30 +51,73 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['vote-submitted']);
+const emit = defineEmits(['vote-submitted', 'vote-undo']);
 
 const cardConfig = CARD_CONFIG;
 const selectedCard = ref(props.initialSelected);
 const submitting = ref(false);
+const voted = ref(!!props.initialSelected);
+const isUndoing = ref(false);
+
+// Watch for changes to initialSelected (e.g., when vote is undone from parent)
+watch(() => props.initialSelected, (newValue) => {
+  // If we're in the process of undoing, don't update from props until undo is complete
+  if (isUndoing.value) {
+    return;
+  }
+  
+  if (newValue === null) {
+    selectedCard.value = null;
+    voted.value = false;
+  } else if (newValue !== selectedCard.value) {
+    selectedCard.value = newValue;
+    voted.value = true;
+  }
+});
 
 function selectCard(value) {
-  if (!props.disabled) {
+  if (props.disabled || voted.value) {
+    return;
+  }
+  
+  // If the same card is clicked again, submit the vote
+  if (selectedCard.value === value && !voted.value) {
+    submitVote();
+  } else {
+    // Different card or first selection
     selectedCard.value = value;
   }
 }
 
 function submitVote() {
-  if (selectedCard.value === null || props.disabled || submitting.value) {
+  if (selectedCard.value === null || props.disabled || submitting.value || voted.value) {
     return;
   }
 
   submitting.value = true;
   emit('vote-submitted', selectedCard.value);
   
-  // Reset submitting state after a short delay
+  // Mark as voted after a short delay
   setTimeout(() => {
     submitting.value = false;
+    voted.value = true;
   }, 500);
+}
+
+function handleUndo() {
+  if (props.disabled) {
+    return;
+  }
+  
+  isUndoing.value = true;
+  voted.value = false;
+  selectedCard.value = null;
+  emit('vote-undo');
+  
+  // Reset isUndoing flag after a short delay to allow server response
+  setTimeout(() => {
+    isUndoing.value = false;
+  }, 1000);
 }
 
 function getSelectedCardLabel() {
@@ -86,8 +139,14 @@ function getSelectedCardLabel() {
 
 h2 {
   color: white;
-  margin-bottom: 24px;
+  margin-bottom: 8px;
   font-size: 1.5rem;
+}
+
+.helper-text {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  margin-bottom: 24px;
 }
 
 .cards-grid {
@@ -185,6 +244,55 @@ h2 {
 }
 
 .btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.submission-success {
+  background: rgba(76, 175, 80, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  padding: 20px;
+  border-radius: 12px;
+  margin-top: 24px;
+}
+
+.success-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #4caf50;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.checkmark {
+  font-size: 1.5rem;
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.btn-undo {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 10px 24px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-undo:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.8);
+  transform: translateY(-2px);
+}
+
+.btn-undo:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

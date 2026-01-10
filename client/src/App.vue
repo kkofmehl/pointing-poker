@@ -6,6 +6,7 @@
       :session-id="sessionId"
       :user-name="userName"
       :initial-session-state="sessionState"
+      @leave="handleLeave"
     />
   </div>
 </template>
@@ -25,6 +26,13 @@ function handleJoined(data) {
   userName.value = data.userName;
   sessionState.value = data.sessionState;
   joined.value = true;
+}
+
+function handleLeave() {
+  joined.value = false;
+  sessionId.value = '';
+  userName.value = '';
+  sessionState.value = {};
 }
 </script>
 
