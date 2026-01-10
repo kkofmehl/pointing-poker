@@ -4,7 +4,7 @@
     
     <div class="results-grid">
       <div
-        v-for="user in users"
+        v-for="user in usersWithVotes"
         :key="user.id"
         :class="['result-card', { 'current-user': user.name === userName }]"
         :style="getCardStyle(votes[user.id])"
@@ -51,6 +51,15 @@ const props = defineProps({
     type: String,
     required: true
   }
+});
+
+// Filter users to only show those who have voted
+const usersWithVotes = computed(() => {
+  return props.users.filter(user => 
+    user.id in props.votes && 
+    props.votes[user.id] !== null && 
+    props.votes[user.id] !== undefined
+  );
 });
 
 // Exclude value 0 (Not Voting) from statistics

@@ -6,6 +6,23 @@ function broadcastActiveSessions(io) {
   io.emit('active_sessions_updated', { sessions: activeSessions });
 }
 
+// Helper function to build session state object
+function buildSessionState(session) {
+  // Ensure votes is always an object, even if the Map is empty
+  const votesObj = session.votes && session.votes.size > 0 
+    ? Object.fromEntries(session.votes) 
+    : {};
+  
+  return {
+    sessionId: session.sessionId,
+    users: Array.from(session.users.values()),
+    // Always include votes for participant status tracking, but only reveal in results when allVoted is true
+    votes: votesObj,
+    selectedCards: Array.from(session.selectedCards.keys()),
+    allVoted: session.allVoted
+  };
+}
+
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -40,14 +57,7 @@ export function setupSocketHandlers(io) {
         socket.join(sessionId);
 
         // Send current session state to the user
-        socket.emit('session_state', {
-          sessionId: updatedSession.sessionId,
-          users: Array.from(updatedSession.users.values()),
-          votes: updatedSession.allVoted 
-            ? Object.fromEntries(updatedSession.votes) 
-            : {},
-          allVoted: updatedSession.allVoted
-        });
+        socket.emit('session_state', buildSessionState(updatedSession));
 
         // Notify other users in the session
         socket.to(sessionId).emit('user_joined', {
@@ -66,23 +76,26 @@ export function setupSocketHandlers(io) {
 
     socket.on('submit_vote', ({ sessionId, cardValue }) => {
       try {
-        const session = sessionManager.submitVote(sessionId, socket.id, cardValue);
+        const session = sessionManager.getSession(sessionId);
         if (!session) {
+          socket.emit('error', { message: 'Session not found' });
+          return;
+        }
+
+        // Prevent voting after votes have been revealed
+        if (session.allVoted) {
+          socket.emit('error', { message: 'Voting has ended. Votes have already been revealed.' });
+          return;
+        }
+
+        const updatedSession = sessionManager.submitVote(sessionId, socket.id, cardValue);
+        if (!updatedSession) {
           socket.emit('error', { message: 'Failed to submit vote' });
           return;
         }
 
         // Broadcast updated state to all users in the session
-        const sessionState = {
-          sessionId: session.sessionId,
-          users: Array.from(session.users.values()),
-          votes: session.allVoted 
-            ? Object.fromEntries(session.votes) 
-            : {},
-          allVoted: session.allVoted
-        };
-
-        io.to(sessionId).emit('session_state', sessionState);
+        io.to(sessionId).emit('session_state', buildSessionState(updatedSession));
       } catch (error) {
         console.error('Error submitting vote:', error);
         socket.emit('error', { message: 'Error submitting vote' });
@@ -98,19 +111,61 @@ export function setupSocketHandlers(io) {
         }
 
         // Broadcast updated state to all users in the session
-        const sessionState = {
-          sessionId: session.sessionId,
-          users: Array.from(session.users.values()),
-          votes: session.allVoted 
-            ? Object.fromEntries(session.votes) 
-            : {},
-          allVoted: session.allVoted
-        };
-
-        io.to(sessionId).emit('session_state', sessionState);
+        io.to(sessionId).emit('session_state', buildSessionState(session));
       } catch (error) {
         console.error('Error retracting vote:', error);
         socket.emit('error', { message: 'Error retracting vote' });
+      }
+    });
+
+    socket.on('card_selected', ({ sessionId }) => {
+      try {
+        const session = sessionManager.selectCard(sessionId, socket.id);
+        if (!session) {
+          socket.emit('error', { message: 'Failed to track card selection' });
+          return;
+        }
+
+        // Broadcast updated selection state to all users in the session
+        io.to(sessionId).emit('session_state', buildSessionState(session));
+      } catch (error) {
+        console.error('Error tracking card selection:', error);
+        socket.emit('error', { message: 'Error tracking card selection' });
+      }
+    });
+
+    socket.on('card_cleared', ({ sessionId }) => {
+      try {
+        const session = sessionManager.clearSelection(sessionId, socket.id);
+        if (!session) {
+          // It's okay if session doesn't exist or user wasn't tracking selection
+          return;
+        }
+
+        // Broadcast updated selection state to all users in the session
+        io.to(sessionId).emit('session_state', buildSessionState(session));
+      } catch (error) {
+        console.error('Error clearing card selection:', error);
+        // Don't emit error for this, it's not critical
+      }
+    });
+
+    socket.on('force_reveal', ({ sessionId }) => {
+      try {
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          socket.emit('error', { message: 'Session not found' });
+          return;
+        }
+
+        // Force reveal votes regardless of vote count
+        session.allVoted = true;
+
+        // Broadcast updated state to all users in the session
+        io.to(sessionId).emit('session_state', buildSessionState(session));
+      } catch (error) {
+        console.error('Error forcing reveal:', error);
+        socket.emit('error', { message: 'Error forcing reveal' });
       }
     });
 
@@ -123,14 +178,7 @@ export function setupSocketHandlers(io) {
         }
 
         // Broadcast reset state to all users
-        const sessionState = {
-          sessionId: session.sessionId,
-          users: Array.from(session.users.values()),
-          votes: {},
-          allVoted: false
-        };
-
-        io.to(sessionId).emit('session_state', sessionState);
+        io.to(sessionId).emit('session_state', buildSessionState(session));
       } catch (error) {
         console.error('Error resetting session:', error);
         socket.emit('error', { message: 'Error resetting session' });
@@ -152,9 +200,8 @@ export function setupSocketHandlers(io) {
             // Notify remaining users
             io.to(sessionId).emit('user_left', {
               users: Array.from(updatedSession.users.values()),
-              votes: updatedSession.allVoted 
-                ? Object.fromEntries(updatedSession.votes) 
-                : {},
+              votes: Object.fromEntries(updatedSession.votes),
+              selectedCards: Array.from(updatedSession.selectedCards.keys()),
               allVoted: updatedSession.allVoted
             });
           } else if (wasLastUser) {
@@ -181,9 +228,8 @@ export function setupSocketHandlers(io) {
             // Notify remaining users
             io.to(sessionId).emit('user_left', {
               users: Array.from(updatedSession.users.values()),
-              votes: updatedSession.allVoted 
-                ? Object.fromEntries(updatedSession.votes) 
-                : {},
+              votes: Object.fromEntries(updatedSession.votes),
+              selectedCards: Array.from(updatedSession.selectedCards.keys()),
               allVoted: updatedSession.allVoted
             });
           } else if (wasLastUser) {

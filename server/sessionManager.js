@@ -12,6 +12,7 @@ class SessionManager {
       sessionId,
       users: new Map(),
       votes: new Map(),
+      selectedCards: new Map(), // Track users who have selected a card but not submitted
       allVoted: false,
       createdAt: Date.now()
     };
@@ -37,6 +38,33 @@ class SessionManager {
     return session;
   }
 
+  selectCard(sessionId, userId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    if (!session.users.has(userId)) {
+      return null;
+    }
+
+    // Track that user has selected a card (but not submitted yet)
+    session.selectedCards.set(userId, true);
+
+    return session;
+  }
+
+  clearSelection(sessionId, userId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    session.selectedCards.delete(userId);
+
+    return session;
+  }
+
   submitVote(sessionId, userId, cardValue) {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -48,6 +76,9 @@ class SessionManager {
     }
 
     session.votes.set(userId, cardValue);
+    
+    // Clear selection when vote is submitted
+    session.selectedCards.delete(userId);
     
     // Check if all users have voted
     const allVoted = session.users.size === session.votes.size && 
@@ -70,6 +101,9 @@ class SessionManager {
     // Remove the vote
     session.votes.delete(userId);
     
+    // Clear selection when vote is retracted
+    session.selectedCards.delete(userId);
+    
     // Recalculate allVoted status - should be false if any user doesn't have a vote
     const allVoted = session.users.size === session.votes.size && 
                      session.users.size > 0;
@@ -85,6 +119,7 @@ class SessionManager {
     }
 
     session.votes.clear();
+    session.selectedCards.clear();
     session.allVoted = false;
 
     return session;
@@ -98,6 +133,7 @@ class SessionManager {
 
     session.users.delete(userId);
     session.votes.delete(userId);
+    session.selectedCards.delete(userId);
 
     // Update allVoted status
     const allVoted = session.users.size === session.votes.size && 

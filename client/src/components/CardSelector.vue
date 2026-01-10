@@ -29,7 +29,7 @@
         <span class="checkmark">✓</span>
         <span>Vote submitted successfully!</span>
       </div>
-      <button @click="handleUndo" class="btn btn-undo" :disabled="disabled">
+      <button @click="handleUndo" class="btn btn-undo">
         Undo
       </button>
     </div>
@@ -51,7 +51,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['vote-submitted', 'vote-undo']);
+const emit = defineEmits(['vote-submitted', 'vote-undo', 'card-selected']);
 
 const cardConfig = CARD_CONFIG;
 const selectedCard = ref(props.initialSelected);
@@ -69,6 +69,7 @@ watch(() => props.initialSelected, (newValue) => {
   if (newValue === null) {
     selectedCard.value = null;
     voted.value = false;
+    // Don't emit card-selected(null) here to avoid loops - parent handles this
   } else if (newValue !== selectedCard.value) {
     selectedCard.value = newValue;
     voted.value = true;
@@ -86,6 +87,7 @@ function selectCard(value) {
   } else {
     // Different card or first selection
     selectedCard.value = value;
+    emit('card-selected', value);
   }
 }
 
@@ -105,14 +107,12 @@ function submitVote() {
 }
 
 function handleUndo() {
-  if (props.disabled) {
-    return;
-  }
-  
+  // Allow undo even when component is disabled (user has voted)
   isUndoing.value = true;
   voted.value = false;
   selectedCard.value = null;
   emit('vote-undo');
+  emit('card-selected', null); // Clear selection tracking
   
   // Reset isUndoing flag after a short delay to allow server response
   setTimeout(() => {
