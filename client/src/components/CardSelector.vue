@@ -16,6 +16,12 @@
       >
         <span v-if="card.icon" class="card-icon">{{ card.icon }}</span>
         <span v-if="card.label" class="card-label">{{ card.label }}</span>
+        <span
+          v-if="selectedCard === card.value && !voted"
+          class="card-helper-text"
+        >
+          Click again to submit this estimate
+        </span>
       </button>
     </div>
     <div v-if="selectedCard !== null && !voted" class="selected-info">
@@ -174,6 +180,14 @@ h2 {
   justify-content: center;
   gap: 8px;
   transform: scale(0.9);
+}
+
+.card-helper-text {
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .card-icon {
