@@ -12,7 +12,10 @@ class SessionManager {
       sessionId,
       users: new Map(),
       votes: new Map(),
-      selectedCards: new Map(), // Track users who have selected a card but not submitted
+      // Track users who have selected a card but not submitted
+      selectedCards: new Map(),
+      // Track confidence (1–10) per user, parallel to votes
+      confidences: new Map(),
       allVoted: false,
       createdAt: Date.now()
     };
@@ -65,7 +68,7 @@ class SessionManager {
     return session;
   }
 
-  submitVote(sessionId, userId, cardValue) {
+  submitVote(sessionId, userId, cardValue, confidence = 10) {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return null;
@@ -76,6 +79,11 @@ class SessionManager {
     }
 
     session.votes.set(userId, cardValue);
+    // Store confidence as integer between 1 and 10, defaulting to 10
+    const normalizedConfidence = Number.isFinite(confidence)
+      ? Math.min(10, Math.max(1, Math.round(confidence)))
+      : 10;
+    session.confidences.set(userId, normalizedConfidence);
     
     // Clear selection when vote is submitted
     session.selectedCards.delete(userId);
@@ -98,8 +106,9 @@ class SessionManager {
       return null;
     }
 
-    // Remove the vote
+    // Remove the vote and associated confidence
     session.votes.delete(userId);
+    session.confidences.delete(userId);
     
     // Clear selection when vote is retracted
     session.selectedCards.delete(userId);
@@ -119,6 +128,7 @@ class SessionManager {
     }
 
     session.votes.clear();
+    session.confidences.clear();
     session.selectedCards.clear();
     session.allVoted = false;
 
@@ -133,6 +143,7 @@ class SessionManager {
 
     session.users.delete(userId);
     session.votes.delete(userId);
+    session.confidences.delete(userId);
     session.selectedCards.delete(userId);
 
     // Update allVoted status

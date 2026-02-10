@@ -2,6 +2,28 @@
   <div class="card-selector">
     <h2>Select Your Estimate</h2>
     <p class="helper-text">All estimates will be displayed once everyone has submitted</p>
+    <div 
+      v-if="selectedCard !== null && !voted" 
+      class="confidence-section"
+    >
+      <label class="confidence-label" for="confidence-slider">
+        Confidence: <strong>{{ confidence }}</strong>/10
+      </label>
+      <input
+        id="confidence-slider"
+        type="range"
+        min="1"
+        max="10"
+        step="1"
+        v-model.number="confidence"
+        :disabled="disabled || voted"
+        class="confidence-slider"
+      />
+      <div class="confidence-scale">
+        <span>Low</span>
+        <span>High</span>
+      </div>
+    </div>
     <div class="cards-grid">
       <button
         v-for="card in cardConfig"
@@ -54,6 +76,10 @@ const props = defineProps({
   initialSelected: {
     type: [Number, String, null],
     default: null
+  },
+  initialConfidence: {
+    type: Number,
+    default: 10
   }
 });
 
@@ -64,6 +90,7 @@ const selectedCard = ref(props.initialSelected);
 const submitting = ref(false);
 const voted = ref(!!props.initialSelected);
 const isUndoing = ref(false);
+const confidence = ref(props.initialConfidence || 10);
 
 // Watch for changes to initialSelected (e.g., when vote is undone from parent)
 watch(() => props.initialSelected, (newValue) => {
@@ -75,6 +102,7 @@ watch(() => props.initialSelected, (newValue) => {
   if (newValue === null) {
     selectedCard.value = null;
     voted.value = false;
+    confidence.value = props.initialConfidence || 10;
     // Don't emit card-selected(null) here to avoid loops - parent handles this
   } else if (newValue !== selectedCard.value) {
     selectedCard.value = newValue;
@@ -103,7 +131,10 @@ function submitVote() {
   }
 
   submitting.value = true;
-  emit('vote-submitted', selectedCard.value);
+  emit('vote-submitted', {
+    cardValue: selectedCard.value,
+    confidence: confidence.value || 10
+  });
   
   // Mark as voted after a short delay
   setTimeout(() => {
@@ -117,6 +148,7 @@ function handleUndo() {
   isUndoing.value = true;
   voted.value = false;
   selectedCard.value = null;
+  confidence.value = props.initialConfidence || 10;
   emit('vote-undo');
   emit('card-selected', null); // Clear selection tracking
   
@@ -153,6 +185,32 @@ h2 {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;
   margin-bottom: 24px;
+}
+
+.confidence-section {
+  max-width: 600px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+
+.confidence-label {
+  display: block;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.confidence-slider {
+  width: 100%;
+  accent-color: #ffd54f;
+}
+
+.confidence-scale {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+  margin-top: 4px;
 }
 
 .cards-grid {

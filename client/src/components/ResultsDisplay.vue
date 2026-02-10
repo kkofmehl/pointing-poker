@@ -17,6 +17,9 @@
           <span v-if="getVoteIcon(votes[user.id])" class="vote-icon">{{ getVoteIcon(votes[user.id]) }}</span>
           <span v-if="getVoteDisplay(votes[user.id])">{{ getVoteDisplay(votes[user.id]) }}</span>
         </div>
+        <div class="confidence-value" v-if="shouldShowConfidence(user.id)">
+          Confidence: <strong>{{ getUserConfidence(user.id) }}</strong>/10
+        </div>
       </div>
     </div>
 
@@ -32,6 +35,10 @@
       <div class="stat-item">
         <span class="stat-label">Max:</span>
         <span class="stat-value">{{ max }}</span>
+      </div>
+      <div class="stat-item" v-if="hasConfidence">
+        <span class="stat-label">Aggregate Confidence:</span>
+        <span class="stat-value">{{ aggregateConfidencePercent }}%</span>
       </div>
     </div>
   </div>
@@ -52,6 +59,10 @@ const props = defineProps({
   },
   userName: {
     type: String,
+    required: true
+  },
+  confidences: {
+    type: Object,
     required: true
   }
 });
@@ -92,6 +103,42 @@ const max = computed(() => {
   return Math.max(...voteValues.value);
 });
 
+// Confidence calculations (1–10), only for users with numerical votes (excluding 0)
+const confidenceValues = computed(() => {
+  const values = [];
+  for (const user of props.users) {
+    const rawVote = props.votes[user.id];
+    if (rawVote === undefined || rawVote === null) {
+      continue;
+    }
+    const numericVote = typeof rawVote === 'string' ? parseFloat(rawVote) : rawVote;
+    if (isNaN(numericVote) || numericVote === 0) {
+      continue;
+    }
+    const rawConfidence = props.confidences && user.id in props.confidences
+      ? props.confidences[user.id]
+      : 10;
+    const numericConfidence = typeof rawConfidence === 'string'
+      ? parseInt(rawConfidence, 10)
+      : rawConfidence;
+    if (Number.isFinite(numericConfidence)) {
+      values.push(Math.min(10, Math.max(1, numericConfidence)));
+    }
+  }
+  return values;
+});
+
+const hasConfidence = computed(() => confidenceValues.value.length > 0);
+
+const aggregateConfidencePercent = computed(() => {
+  if (!hasConfidence.value) {
+    return 0;
+  }
+  const sum = confidenceValues.value.reduce((a, b) => a + b, 0);
+  const averageConfidence = sum / confidenceValues.value.length;
+  return Math.round(averageConfidence * 10);
+});
+
 function getCardStyle(voteValue) {
   if (voteValue === undefined || voteValue === null) {
     return {};
@@ -129,6 +176,32 @@ function getVoteIcon(voteValue) {
   }
   const card = getCardConfig(voteValue);
   return card ? card.icon : null;
+}
+
+function getUserConfidence(userId) {
+  const rawConfidence = props.confidences && userId in props.confidences
+    ? props.confidences[userId]
+    : 10;
+  const numericConfidence = typeof rawConfidence === 'string'
+    ? parseInt(rawConfidence, 10)
+    : rawConfidence;
+  if (!Number.isFinite(numericConfidence)) {
+    return 10;
+  }
+  return Math.min(10, Math.max(1, numericConfidence));
+}
+
+function shouldShowConfidence(userId) {
+  const rawVote = props.votes[userId];
+  if (rawVote === undefined || rawVote === null) {
+    return false;
+  }
+  const numericVote = typeof rawVote === 'string' ? parseFloat(rawVote) : rawVote;
+  // Hide confidence for coffee / Not Voting (0) so it doesn't appear to affect the aggregate
+  if (isNaN(numericVote) || numericVote === 0) {
+    return false;
+  }
+  return true;
 }
 </script>
 
@@ -216,6 +289,12 @@ function getVoteIcon(voteValue) {
 
 .result-card.current-user .vote-value {
   color: white;
+}
+
+.confidence-value {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .result-card:not(.current-user) {

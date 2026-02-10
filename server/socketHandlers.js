@@ -8,9 +8,12 @@ function broadcastActiveSessions(io) {
 
 // Helper function to build session state object
 function buildSessionState(session) {
-  // Ensure votes is always an object, even if the Map is empty
+  // Ensure votes and confidences are always objects, even if the Maps are empty
   const votesObj = session.votes && session.votes.size > 0 
     ? Object.fromEntries(session.votes) 
+    : {};
+  const confidencesObj = session.confidences && session.confidences.size > 0
+    ? Object.fromEntries(session.confidences)
     : {};
   
   return {
@@ -18,6 +21,7 @@ function buildSessionState(session) {
     users: Array.from(session.users.values()),
     // Always include votes for participant status tracking, but only reveal in results when allVoted is true
     votes: votesObj,
+    confidences: confidencesObj,
     selectedCards: Array.from(session.selectedCards.keys()),
     allVoted: session.allVoted
   };
@@ -74,7 +78,7 @@ export function setupSocketHandlers(io) {
       }
     });
 
-    socket.on('submit_vote', ({ sessionId, cardValue }) => {
+    socket.on('submit_vote', ({ sessionId, cardValue, confidence }) => {
       try {
         const session = sessionManager.getSession(sessionId);
         if (!session) {
@@ -88,7 +92,7 @@ export function setupSocketHandlers(io) {
           return;
         }
 
-        const updatedSession = sessionManager.submitVote(sessionId, socket.id, cardValue);
+        const updatedSession = sessionManager.submitVote(sessionId, socket.id, cardValue, confidence);
         if (!updatedSession) {
           socket.emit('error', { message: 'Failed to submit vote' });
           return;
@@ -201,6 +205,7 @@ export function setupSocketHandlers(io) {
             io.to(sessionId).emit('user_left', {
               users: Array.from(updatedSession.users.values()),
               votes: Object.fromEntries(updatedSession.votes),
+              confidences: Object.fromEntries(updatedSession.confidences),
               selectedCards: Array.from(updatedSession.selectedCards.keys()),
               allVoted: updatedSession.allVoted
             });
@@ -229,6 +234,7 @@ export function setupSocketHandlers(io) {
             io.to(sessionId).emit('user_left', {
               users: Array.from(updatedSession.users.values()),
               votes: Object.fromEntries(updatedSession.votes),
+              confidences: Object.fromEntries(updatedSession.confidences),
               selectedCards: Array.from(updatedSession.selectedCards.keys()),
               allVoted: updatedSession.allVoted
             });

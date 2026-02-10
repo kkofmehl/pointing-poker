@@ -63,6 +63,7 @@
       <CardSelector
         :disabled="hasVoted || allVoted"
         :initial-selected="userVote"
+        :initial-confidence="userConfidence"
         @vote-submitted="handleVoteSubmitted"
         @vote-undo="handleVoteUndo"
         @card-selected="handleCardSelected"
@@ -79,6 +80,7 @@
         :users="users"
         :votes="votes"
         :userName="userName"
+        :confidences="confidences"
       />
     </div>
   </div>
@@ -109,9 +111,11 @@ const emit = defineEmits(['leave']);
 
 const users = ref(props.initialSessionState.users || []);
 const votes = ref(props.initialSessionState.votes && typeof props.initialSessionState.votes === 'object' ? props.initialSessionState.votes : {});
+const confidences = ref(props.initialSessionState.confidences && typeof props.initialSessionState.confidences === 'object' ? props.initialSessionState.confidences : {});
 const allVoted = ref(props.initialSessionState.allVoted || false);
 const hasVoted = ref(false);
 const userVote = ref(null);
+const userConfidence = ref(10);
 const selectedUsers = ref(props.initialSessionState.selectedCards || []);
 const showRevealModal = ref(false);
 
@@ -136,17 +140,24 @@ function handleForceReveal() {
   showRevealModal.value = false;
 }
 
-function handleVoteSubmitted(cardValue) {
+function handleVoteSubmitted(payload) {
+  const cardValue = typeof payload === 'object' && payload !== null ? payload.cardValue : payload;
+  const confidenceValue = typeof payload === 'object' && payload !== null && 'confidence' in payload
+    ? payload.confidence
+    : 10;
   // Optimistically update local state immediately
   if (socketId.value) {
     votes.value = { ...votes.value, [socketId.value]: cardValue };
+    confidences.value = { ...confidences.value, [socketId.value]: confidenceValue };
   }
   userVote.value = cardValue;
+  userConfidence.value = confidenceValue;
   hasVoted.value = true;
   
   socketService.emit('submit_vote', {
     sessionId: props.sessionId,
-    cardValue: cardValue
+    cardValue: cardValue,
+    confidence: confidenceValue
   });
 }
 
@@ -157,8 +168,14 @@ function handleVoteUndo() {
     delete updatedVotes[socketId.value];
     votes.value = updatedVotes;
   }
+  if (socketId.value && socketId.value in confidences.value) {
+    const updatedConfidences = { ...confidences.value };
+    delete updatedConfidences[socketId.value];
+    confidences.value = updatedConfidences;
+  }
   hasVoted.value = false;
   userVote.value = null;
+  userConfidence.value = 10;
   
   socketService.emit('retract_vote', {
     sessionId: props.sessionId
@@ -196,6 +213,7 @@ function updateSessionState(state) {
   users.value = state.users || [];
   // Ensure votes is always an object, even if empty
   votes.value = state.votes && typeof state.votes === 'object' ? state.votes : {};
+  confidences.value = state.confidences && typeof state.confidences === 'object' ? state.confidences : {};
   allVoted.value = state.allVoted || false;
   selectedUsers.value = state.selectedCards || [];
   
@@ -205,9 +223,15 @@ function updateSessionState(state) {
   // Update user's vote display
   if (socketId.value && votes.value[socketId.value]) {
     userVote.value = votes.value[socketId.value];
+    const rawConfidence = confidences.value && socketId.value in confidences.value
+      ? confidences.value[socketId.value]
+      : 10;
+    const numericConfidence = typeof rawConfidence === 'string' ? parseInt(rawConfidence, 10) : rawConfidence;
+    userConfidence.value = Number.isFinite(numericConfidence) ? numericConfidence : 10;
   } else {
     // Reset userVote when no vote exists (e.g., after reset or undo)
     userVote.value = null;
+    userConfidence.value = 10;
   }
 }
 
@@ -219,6 +243,7 @@ onMounted(() => {
   socketService.on('user_left', (data) => {
     users.value = data.users || users.value;
     votes.value = data.votes || votes.value;
+    confidences.value = data.confidences || confidences.value;
     selectedUsers.value = data.selectedCards || [];
     allVoted.value = data.allVoted || false;
     // Recalculate hasVoted after user left
@@ -233,6 +258,11 @@ onMounted(() => {
     hasVoted.value = socketId.value in props.initialSessionState.votes;
     if (hasVoted.value) {
       userVote.value = props.initialSessionState.votes[socketId.value];
+      const rawConfidence = props.initialSessionState.confidences && socketId.value in props.initialSessionState.confidences
+        ? props.initialSessionState.confidences[socketId.value]
+        : 10;
+      const numericConfidence = typeof rawConfidence === 'string' ? parseInt(rawConfidence, 10) : rawConfidence;
+      userConfidence.value = Number.isFinite(numericConfidence) ? numericConfidence : 10;
     }
   }
 });
