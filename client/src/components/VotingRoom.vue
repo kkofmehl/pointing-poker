@@ -9,6 +9,13 @@
         <button @click="handleReset" class="btn btn-secondary" v-if="allVoted">
           New Round
         </button>
+        <button
+          @click="showCloseSessionModal = true"
+          class="btn btn-close-session"
+          data-test="close-session-btn"
+        >
+          Close Session
+        </button>
         <button @click="handleLeaveSession" class="btn btn-leave">
           Leave Session
         </button>
@@ -55,6 +62,26 @@
         <div class="modal-actions">
           <button @click="handleForceReveal" class="btn btn-modal-confirm">It's Okay</button>
           <button @click="showRevealModal = false" class="btn btn-modal-cancel">Nevermind</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Close Session Modal -->
+    <div v-if="showCloseSessionModal" class="modal-overlay" @click="showCloseSessionModal = false">
+      <div class="modal-content" @click.stop>
+        <h3>Close Session?</h3>
+        <p>This will close the session for all users. Everyone will be returned to the join screen.</p>
+        <div class="modal-actions">
+          <button
+            @click="handleCloseSession"
+            class="btn btn-modal-confirm"
+            data-test="confirm-close-session-btn"
+          >
+            Close Session
+          </button>
+          <button @click="showCloseSessionModal = false" class="btn btn-modal-cancel">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -118,6 +145,7 @@ const userVote = ref(null);
 const userConfidence = ref(10);
 const selectedUsers = ref(props.initialSessionState.selectedCards || []);
 const showRevealModal = ref(false);
+const showCloseSessionModal = ref(false);
 
 const socketId = computed(() => socketService.getSocketId());
 
@@ -209,6 +237,13 @@ function handleLeaveSession() {
   emit('leave');
 }
 
+function handleCloseSession() {
+  socketService.emit('close_session', {
+    sessionId: props.sessionId
+  });
+  showCloseSessionModal.value = false;
+}
+
 function updateSessionState(state) {
   users.value = state.users || [];
   // Ensure votes is always an object, even if empty
@@ -235,23 +270,32 @@ function updateSessionState(state) {
   }
 }
 
+function handleUserJoined(data) {
+  users.value = data.users || users.value;
+}
+
+function handleUserLeft(data) {
+  users.value = data.users || users.value;
+  votes.value = data.votes || votes.value;
+  confidences.value = data.confidences || confidences.value;
+  selectedUsers.value = data.selectedCards || [];
+  allVoted.value = data.allVoted || false;
+  // Recalculate hasVoted after user left
+  hasVoted.value = socketId.value ? (socketId.value in votes.value) : false;
+  if (!hasVoted.value) {
+    userVote.value = null;
+  }
+}
+
+function handleSessionClosed() {
+  emit('leave');
+}
+
 onMounted(() => {
   socketService.on('session_state', updateSessionState);
-  socketService.on('user_joined', (data) => {
-    users.value = data.users || users.value;
-  });
-  socketService.on('user_left', (data) => {
-    users.value = data.users || users.value;
-    votes.value = data.votes || votes.value;
-    confidences.value = data.confidences || confidences.value;
-    selectedUsers.value = data.selectedCards || [];
-    allVoted.value = data.allVoted || false;
-    // Recalculate hasVoted after user left
-    hasVoted.value = socketId.value ? (socketId.value in votes.value) : false;
-    if (!hasVoted.value) {
-      userVote.value = null;
-    }
-  });
+  socketService.on('user_joined', handleUserJoined);
+  socketService.on('user_left', handleUserLeft);
+  socketService.on('session_closed', handleSessionClosed);
   
   // Initialize hasVoted from initial state
   if (socketId.value && props.initialSessionState.votes) {
@@ -269,6 +313,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   socketService.off('session_state', updateSessionState);
+  socketService.off('user_joined', handleUserJoined);
+  socketService.off('user_left', handleUserLeft);
+  socketService.off('session_closed', handleSessionClosed);
 });
 </script>
 
@@ -337,6 +384,22 @@ onUnmounted(() => {
 .btn-leave:hover {
   background: rgba(255, 87, 34, 0.4);
   border-color: rgba(255, 87, 34, 0.8);
+}
+
+.btn-close-session {
+  background: rgba(244, 67, 54, 0.2);
+  color: white;
+  border: 2px solid rgba(244, 67, 54, 0.5);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-close-session:hover {
+  background: rgba(244, 67, 54, 0.35);
+  border-color: rgba(244, 67, 54, 0.9);
 }
 
 .participants {

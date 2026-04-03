@@ -135,6 +135,10 @@ class SessionManager {
     return session;
   }
 
+  closeSession(sessionId) {
+    return this.sessions.delete(sessionId);
+  }
+
   removeUser(sessionId, userId) {
     const session = this.sessions.get(sessionId);
     if (!session) {

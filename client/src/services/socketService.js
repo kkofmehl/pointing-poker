@@ -7,7 +7,10 @@ class SocketService {
   }
 
   connect() {
-    if (this.socket?.connected) {
+    if (this.socket) {
+      if (!this.socket.connected && typeof this.socket.connect === 'function') {
+        this.socket.connect();
+      }
       return;
     }
 
@@ -51,6 +54,14 @@ class SocketService {
       this.listeners.set(event, []);
     }
     this.listeners.get(event).push(callback);
+  }
+
+  onConnect(callback) {
+    this.on('connect', callback);
+  }
+
+  offConnect(callback) {
+    this.off('connect', callback);
   }
 
   off(event, callback) {

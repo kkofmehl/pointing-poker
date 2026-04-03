@@ -189,6 +189,26 @@ export function setupSocketHandlers(io) {
       }
     });
 
+    socket.on('close_session', ({ sessionId }) => {
+      try {
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          socket.emit('error', { message: 'Session not found' });
+          return;
+        }
+
+        io.to(sessionId).emit('session_closed', {
+          sessionId
+        });
+        io.in(sessionId).socketsLeave(sessionId);
+        sessionManager.closeSession(sessionId);
+        broadcastActiveSessions(io);
+      } catch (error) {
+        console.error('Error closing session:', error);
+        socket.emit('error', { message: 'Error closing session' });
+      }
+    });
+
     socket.on('leave_session', ({ sessionId }) => {
       try {
         // Leave the socket room

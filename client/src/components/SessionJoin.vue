@@ -81,6 +81,8 @@ const userName = ref('');
 const error = ref('');
 const activeSessions = ref([]);
 const selectedSessionId = ref('');
+const pendingJoinUserName = ref('');
+const isJoinPending = ref(false);
 
 socketService.connect();
 
@@ -105,16 +107,30 @@ function onSessionSelectChange() {
   }
 }
 
+function handleSocketError(err) {
+  error.value = err.message || 'An error occurred';
+  isJoinPending.value = false;
+  pendingJoinUserName.value = '';
+}
+
 // Handle active sessions updates
 function handleActiveSessionsUpdate(data) {
   activeSessions.value = data.sessions || [];
 }
 
-socketService.on('error', (err) => {
-  error.value = err.message || 'An error occurred';
-});
+function handleSessionState(state) {
+  if (!isJoinPending.value) {
+    return;
+  }
 
-socketService.on('active_sessions_updated', handleActiveSessionsUpdate);
+  isJoinPending.value = false;
+  emit('joined', {
+    sessionId: state.sessionId,
+    userName: pendingJoinUserName.value || userName.value.trim(),
+    sessionState: state
+  });
+  pendingJoinUserName.value = '';
+}
 
 function handleJoin() {
   const finalSessionId = effectiveSessionId.value;
@@ -128,24 +144,24 @@ function handleJoin() {
     sessionId: finalSessionId,
     userName: userName.value.trim()
   });
-
-  socketService.on('session_state', (state) => {
-    emit('joined', {
-      sessionId: state.sessionId,
-      userName: userName.value.trim(),
-      sessionState: state
-    });
-  });
+  isJoinPending.value = true;
+  pendingJoinUserName.value = userName.value.trim();
 }
 
 onMounted(() => {
+  socketService.on('error', handleSocketError);
+  socketService.on('active_sessions_updated', handleActiveSessionsUpdate);
+  socketService.on('session_state', handleSessionState);
+
   // Request active sessions when component mounts
   socketService.emit('get_active_sessions');
 });
 
 onUnmounted(() => {
   // Clean up listeners
+  socketService.off('error', handleSocketError);
   socketService.off('active_sessions_updated', handleActiveSessionsUpdate);
+  socketService.off('session_state', handleSessionState);
 });
 </script>
 
