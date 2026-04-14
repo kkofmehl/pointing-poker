@@ -1,14 +1,19 @@
 import nodeFetch from 'node-fetch';
+import { InferenceClient } from '@huggingface/inference';
+import { mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { createHash } from 'crypto';
+import { join } from 'path';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const HUGGING_FACE_API_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
-const CACHE_TTL_MS = 1000 * 60 * 60;
-const CACHE_MAX_ENTRIES = 100;
 const REQUEST_TIMEOUT_MS = 12000;
 const DEFAULT_IMAGE_MODELS = ['gemini-3.1-flash-image-preview'];
 const DEFAULT_HUGGING_FACE_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0';
+const DEFAULT_HUGGING_FACE_PROVIDER = 'auto';
 
 const imageCache = new Map();
+const inFlightGeneration = new Map();
+const defaultHuggingFaceClientFactory = (apiKey) => new InferenceClient(apiKey);
+let huggingFaceClientFactory = defaultHuggingFaceClientFactory;
 
 function fetchWithFallback(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -18,52 +23,99 @@ function fetchWithFallback(...args) {
   return nodeFetch(...args);
 }
 
-function buildPrompt(sessionName) {
+if (typeof globalThis.fetch !== 'function') {
+  globalThis.fetch = (...args) => fetchWithFallback(...args);
+}
+
+function buildPrompt(sessionId) {
   return [
     'Create a cinematic, background image.',
-    `Theme inspiration: "${sessionName}".`,
+    `Theme inspiration: "${sessionId}".`,
     'No logos, no text, no numbers.',
     'Use a dark but colorful palette that keeps UI text readable.'
   ].join(' ');
 }
 
-function pruneCache() {
-  const now = Date.now();
-  for (const [key, value] of imageCache.entries()) {
-    if (now - value.createdAt > CACHE_TTL_MS) {
-      imageCache.delete(key);
-    }
-  }
+function getCacheDirectory() {
+  return (
+    process.env.SESSION_BACKGROUND_CACHE_DIR?.trim() ||
+    join(process.cwd(), 'server', '.cache', 'session-backgrounds')
+  );
+}
 
-  while (imageCache.size > CACHE_MAX_ENTRIES) {
-    const oldestKey = imageCache.keys().next().value;
-    if (!oldestKey) {
-      break;
+function getCacheFilePaths(sessionId) {
+  const cacheKey = createHash('sha256').update(sessionId).digest('hex');
+  const cacheDirectory = getCacheDirectory();
+
+  return {
+    binaryPath: join(cacheDirectory, `${cacheKey}.bin`),
+    metadataPath: join(cacheDirectory, `${cacheKey}.json`)
+  };
+}
+
+async function readCachedImageFromDisk(sessionId) {
+  const { binaryPath, metadataPath } = getCacheFilePaths(sessionId);
+
+  try {
+    const [binaryBuffer, metadataRaw] = await Promise.all([
+      readFile(binaryPath),
+      readFile(metadataPath, 'utf8')
+    ]);
+    const metadata = JSON.parse(metadataRaw);
+    if (typeof metadata?.mimeType !== 'string' || !metadata.mimeType.startsWith('image/')) {
+      return null;
     }
-    imageCache.delete(oldestKey);
+
+    return {
+      buffer: binaryBuffer,
+      mimeType: metadata.mimeType
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
   }
 }
 
-function getCachedImage(sessionName) {
-  const cached = imageCache.get(sessionName);
-  if (!cached) {
-    return null;
-  }
+async function writeCachedImageToDisk(sessionId, imageData) {
+  const cacheDirectory = getCacheDirectory();
+  const { binaryPath, metadataPath } = getCacheFilePaths(sessionId);
+  await mkdir(cacheDirectory, { recursive: true });
 
-  if (Date.now() - cached.createdAt > CACHE_TTL_MS) {
-    imageCache.delete(sessionName);
-    return null;
+  await Promise.all([
+    writeFile(binaryPath, imageData.buffer),
+    writeFile(
+      metadataPath,
+      JSON.stringify(
+        {
+          mimeType: imageData.mimeType
+        },
+        null,
+        2
+      )
+    )
+  ]);
+}
+
+export async function getSessionBackground(sessionId) {
+  const cached = imageCache.get(sessionId);
+  if (!cached) {
+    const diskCachedImage = await readCachedImageFromDisk(sessionId);
+    if (!diskCachedImage) {
+      return null;
+    }
+
+    imageCache.set(sessionId, diskCachedImage);
+    return diskCachedImage;
   }
 
   return cached;
 }
 
-function setCachedImage(sessionName, imageData) {
-  imageCache.set(sessionName, {
-    ...imageData,
-    createdAt: Date.now()
-  });
-  pruneCache();
+function setCachedImage(sessionId, imageData) {
+  imageCache.set(sessionId, imageData);
 }
 
 function extractInlineImage(responseJson) {
@@ -99,7 +151,7 @@ export function mapGeminiErrorToHttpStatus(error) {
   return 503;
 }
 
-async function requestGeminiImage({ sessionName, apiKey, abortController }) {
+async function requestGeminiImage({ sessionId, apiKey, abortController }) {
   const configuredModel = process.env.GEMINI_IMAGE_MODEL?.trim();
   const candidateModels = configuredModel
     ? [configuredModel]
@@ -118,7 +170,7 @@ async function requestGeminiImage({ sessionName, apiKey, abortController }) {
         body: JSON.stringify({
           contents: [
             {
-              parts: [{ text: buildPrompt(sessionName) }]
+              parts: [{ text: buildPrompt(sessionId) }]
             }
           ],
           generationConfig: {
@@ -166,54 +218,43 @@ async function requestGeminiImage({ sessionName, apiKey, abortController }) {
   throw lastError || new Error('No Gemini image model candidates succeeded');
 }
 
-async function requestHuggingFaceImage({ sessionName, apiKey, abortController }) {
+async function requestHuggingFaceImage({ sessionName, apiKey }) {
   const model = process.env.HUGGING_FACE_IMAGE_MODEL?.trim() || DEFAULT_HUGGING_FACE_MODEL;
-  const generationResponse = await fetchWithFallback(`${HUGGING_FACE_API_BASE_URL}/${model}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
+  const provider = process.env.HUGGING_FACE_PROVIDER?.trim() || DEFAULT_HUGGING_FACE_PROVIDER;
+  const client = huggingFaceClientFactory(apiKey);
+
+  try {
+    const imageBlob = await client.textToImage({
+      provider,
+      model,
       inputs: buildPrompt(sessionName),
       options: {
         wait_for_model: true
       }
-    }),
-    signal: abortController.signal
-  });
+    });
 
-  if (!generationResponse.ok) {
-    const errorBody = await generationResponse.text();
+    const imageArrayBuffer = await imageBlob.arrayBuffer();
+    return {
+      buffer: Buffer.from(imageArrayBuffer),
+      mimeType: imageBlob.type || 'image/png'
+    };
+  } catch (error) {
+    const details =
+      typeof error?.message === 'string' ? error.message : JSON.stringify(error || {});
     const huggingFaceError = new Error(
-      `Hugging Face request failed with status ${generationResponse.status}`
+      `Hugging Face request failed${error?.status ? ` with status ${error.status}` : ''}`
     );
     huggingFaceError.code = 'HUGGING_FACE_HTTP_ERROR';
     huggingFaceError.provider = 'hugging_face';
-    huggingFaceError.httpStatus = generationResponse.status;
-    huggingFaceError.details = errorBody;
+    if (typeof error?.status === 'number') {
+      huggingFaceError.httpStatus = error.status;
+    }
+    huggingFaceError.details = details;
     throw huggingFaceError;
   }
-
-  const contentType = generationResponse.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    const errorPayload = await generationResponse.json();
-    const invalidPayloadError = new Error('Hugging Face did not return image bytes');
-    invalidPayloadError.code = 'HUGGING_FACE_INVALID_RESPONSE';
-    invalidPayloadError.provider = 'hugging_face';
-    invalidPayloadError.details = JSON.stringify(errorPayload);
-    throw invalidPayloadError;
-  }
-
-  const imageArrayBuffer = await generationResponse.arrayBuffer();
-  const mimeType = contentType || 'image/png';
-  return {
-    buffer: Buffer.from(imageArrayBuffer),
-    mimeType
-  };
 }
 
-export async function generateSessionBackground(sessionName) {
+async function generateFromProviders(sessionId) {
   const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
   const huggingFaceApiKey = process.env.HUGGING_FACE_API_KEY?.trim();
   if (!geminiApiKey && !huggingFaceApiKey) {
@@ -222,11 +263,6 @@ export async function generateSessionBackground(sessionName) {
     );
     missingProviderError.code = 'MISSING_API_KEY';
     throw missingProviderError;
-  }
-
-  const cached = getCachedImage(sessionName);
-  if (cached) {
-    return cached;
   }
 
   const abortController = new AbortController();
@@ -238,11 +274,10 @@ export async function generateSessionBackground(sessionName) {
     if (geminiApiKey) {
       try {
         const imageData = await requestGeminiImage({
-          sessionName,
+          sessionId,
           apiKey: geminiApiKey,
           abortController
         });
-        setCachedImage(sessionName, imageData);
         return imageData;
       } catch (error) {
         lastError = error;
@@ -251,11 +286,10 @@ export async function generateSessionBackground(sessionName) {
 
     if (huggingFaceApiKey) {
       const imageData = await requestHuggingFaceImage({
-        sessionName,
+        sessionName: sessionId,
         apiKey: huggingFaceApiKey,
         abortController
       });
-      setCachedImage(sessionName, imageData);
       return imageData;
     }
 
@@ -263,4 +297,52 @@ export async function generateSessionBackground(sessionName) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function ensureSessionBackground(sessionId) {
+  const cachedImage = await getSessionBackground(sessionId);
+  if (cachedImage) {
+    return cachedImage;
+  }
+
+  if (inFlightGeneration.has(sessionId)) {
+    return inFlightGeneration.get(sessionId);
+  }
+
+  const generationPromise = (async () => {
+    const imageData = await generateFromProviders(sessionId);
+    await writeCachedImageToDisk(sessionId, imageData);
+    setCachedImage(sessionId, imageData);
+    return imageData;
+  })().finally(() => {
+    inFlightGeneration.delete(sessionId);
+  });
+
+  inFlightGeneration.set(sessionId, generationPromise);
+  return generationPromise;
+}
+
+export async function deleteSessionBackground(sessionId) {
+  imageCache.delete(sessionId);
+  inFlightGeneration.delete(sessionId);
+
+  const { binaryPath, metadataPath } = getCacheFilePaths(sessionId);
+  await Promise.all([
+    rm(binaryPath, { force: true }),
+    rm(metadataPath, { force: true })
+  ]);
+}
+
+export async function generateSessionBackground(sessionId) {
+  return ensureSessionBackground(sessionId);
+}
+
+export function __resetSessionBackgroundCacheForTests() {
+  imageCache.clear();
+  inFlightGeneration.clear();
+  huggingFaceClientFactory = defaultHuggingFaceClientFactory;
+}
+
+export function __setHuggingFaceClientFactoryForTests(factory) {
+  huggingFaceClientFactory = factory;
 }

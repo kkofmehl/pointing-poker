@@ -1,9 +1,12 @@
 import { sessionManager } from './sessionManager.js';
-import { generateSessionBackground } from './geminiBackgroundService.js';
+import {
+  deleteSessionBackground,
+  ensureSessionBackground
+} from './geminiBackgroundService.js';
 
 // Helper function to broadcast active sessions to all clients
-function broadcastActiveSessions(io) {
-  const activeSessions = sessionManager.getAllActiveSessions();
+function broadcastActiveSessions(io, manager) {
+  const activeSessions = manager.getAllActiveSessions();
   io.emit('active_sessions_updated', { sessions: activeSessions });
 }
 
@@ -28,9 +31,9 @@ function buildSessionState(session) {
   };
 }
 
-async function generateAndBroadcastSessionBackground(io, sessionId) {
+async function generateAndBroadcastSessionBackground(io, sessionId, ensureBackground) {
   try {
-    await generateSessionBackground(sessionId);
+    await ensureBackground(sessionId);
     io.to(sessionId).emit('session_background_ready', { sessionId });
   } catch (error) {
     console.error('Error generating shared session background', {
@@ -42,31 +45,35 @@ async function generateAndBroadcastSessionBackground(io, sessionId) {
   }
 }
 
-export function setupSocketHandlers(io) {
+export function setupSocketHandlers(io, deps = {}) {
+  const manager = deps.sessionManager || sessionManager;
+  const ensureBackground = deps.ensureSessionBackground || ensureSessionBackground;
+  const deleteBackground = deps.deleteSessionBackground || deleteSessionBackground;
+
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
     // Send initial active sessions list when client connects
-    const activeSessions = sessionManager.getAllActiveSessions();
+    const activeSessions = manager.getAllActiveSessions();
     socket.emit('active_sessions_updated', { sessions: activeSessions });
 
     // Handle request for active sessions
     socket.on('get_active_sessions', () => {
-      const activeSessions = sessionManager.getAllActiveSessions();
+      const activeSessions = manager.getAllActiveSessions();
       socket.emit('active_sessions_updated', { sessions: activeSessions });
     });
 
     socket.on('join_session', ({ sessionId, userName }) => {
       try {
         // Create or join session
-        let session = sessionManager.getSession(sessionId);
+        let session = manager.getSession(sessionId);
         const wasNewSession = !session;
         if (!session) {
-          session = sessionManager.createSession(sessionId);
+          session = manager.createSession(sessionId);
         }
 
         // Join the user to the session
-        const updatedSession = sessionManager.joinSession(sessionId, socket.id, userName);
+        const updatedSession = manager.joinSession(sessionId, socket.id, userName);
         if (!updatedSession) {
           socket.emit('error', { message: 'Failed to join session' });
           return;
@@ -85,11 +92,11 @@ export function setupSocketHandlers(io) {
 
         // If this was a new session, broadcast updated active sessions list
         if (wasNewSession) {
-          broadcastActiveSessions(io);
+          broadcastActiveSessions(io, manager);
         }
 
         // Ensure all participants can apply the same generated background.
-        void generateAndBroadcastSessionBackground(io, sessionId);
+        void generateAndBroadcastSessionBackground(io, sessionId, ensureBackground);
       } catch (error) {
         console.error('Error joining session:', error);
         socket.emit('error', { message: 'Error joining session' });
@@ -98,7 +105,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('submit_vote', ({ sessionId, cardValue, confidence }) => {
       try {
-        const session = sessionManager.getSession(sessionId);
+        const session = manager.getSession(sessionId);
         if (!session) {
           socket.emit('error', { message: 'Session not found' });
           return;
@@ -110,7 +117,7 @@ export function setupSocketHandlers(io) {
           return;
         }
 
-        const updatedSession = sessionManager.submitVote(sessionId, socket.id, cardValue, confidence);
+        const updatedSession = manager.submitVote(sessionId, socket.id, cardValue, confidence);
         if (!updatedSession) {
           socket.emit('error', { message: 'Failed to submit vote' });
           return;
@@ -126,7 +133,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('retract_vote', ({ sessionId }) => {
       try {
-        const session = sessionManager.removeVote(sessionId, socket.id);
+        const session = manager.removeVote(sessionId, socket.id);
         if (!session) {
           socket.emit('error', { message: 'Failed to retract vote' });
           return;
@@ -142,7 +149,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('card_selected', ({ sessionId }) => {
       try {
-        const session = sessionManager.selectCard(sessionId, socket.id);
+        const session = manager.selectCard(sessionId, socket.id);
         if (!session) {
           socket.emit('error', { message: 'Failed to track card selection' });
           return;
@@ -158,7 +165,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('card_cleared', ({ sessionId }) => {
       try {
-        const session = sessionManager.clearSelection(sessionId, socket.id);
+        const session = manager.clearSelection(sessionId, socket.id);
         if (!session) {
           // It's okay if session doesn't exist or user wasn't tracking selection
           return;
@@ -174,7 +181,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('force_reveal', ({ sessionId }) => {
       try {
-        const session = sessionManager.getSession(sessionId);
+        const session = manager.getSession(sessionId);
         if (!session) {
           socket.emit('error', { message: 'Session not found' });
           return;
@@ -193,7 +200,7 @@ export function setupSocketHandlers(io) {
 
     socket.on('reset_session', ({ sessionId }) => {
       try {
-        const session = sessionManager.resetSession(sessionId);
+        const session = manager.resetSession(sessionId);
         if (!session) {
           socket.emit('error', { message: 'Failed to reset session' });
           return;
@@ -207,9 +214,9 @@ export function setupSocketHandlers(io) {
       }
     });
 
-    socket.on('close_session', ({ sessionId }) => {
+    socket.on('close_session', async ({ sessionId }) => {
       try {
-        const session = sessionManager.getSession(sessionId);
+        const session = manager.getSession(sessionId);
         if (!session) {
           socket.emit('error', { message: 'Session not found' });
           return;
@@ -219,24 +226,25 @@ export function setupSocketHandlers(io) {
           sessionId
         });
         io.in(sessionId).socketsLeave(sessionId);
-        sessionManager.closeSession(sessionId);
-        broadcastActiveSessions(io);
+        manager.closeSession(sessionId);
+        await deleteBackground(sessionId);
+        broadcastActiveSessions(io, manager);
       } catch (error) {
         console.error('Error closing session:', error);
         socket.emit('error', { message: 'Error closing session' });
       }
     });
 
-    socket.on('leave_session', ({ sessionId }) => {
+    socket.on('leave_session', async ({ sessionId }) => {
       try {
         // Leave the socket room
         socket.leave(sessionId);
         
         // Find and remove user from their session
-        const session = sessionManager.getSession(sessionId);
+        const session = manager.getSession(sessionId);
         if (session && session.users.has(socket.id)) {
           const wasLastUser = session.users.size === 1;
-          const updatedSession = sessionManager.removeUser(sessionId, socket.id);
+          const updatedSession = manager.removeUser(sessionId, socket.id);
           
           if (updatedSession) {
             // Notify remaining users
@@ -249,7 +257,8 @@ export function setupSocketHandlers(io) {
             });
           } else if (wasLastUser) {
             // Session was deleted (last user left), broadcast updated active sessions
-            broadcastActiveSessions(io);
+            await deleteBackground(sessionId);
+            broadcastActiveSessions(io, manager);
           }
         }
       } catch (error) {
@@ -258,14 +267,14 @@ export function setupSocketHandlers(io) {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log('User disconnected:', socket.id);
       
       // Find and remove user from their session
-      for (const [sessionId, session] of sessionManager.sessions.entries()) {
+      for (const [sessionId, session] of manager.sessions.entries()) {
         if (session.users.has(socket.id)) {
           const wasLastUser = session.users.size === 1;
-          const updatedSession = sessionManager.removeUser(sessionId, socket.id);
+          const updatedSession = manager.removeUser(sessionId, socket.id);
           
           if (updatedSession) {
             // Notify remaining users
@@ -278,7 +287,8 @@ export function setupSocketHandlers(io) {
             });
           } else if (wasLastUser) {
             // Session was deleted (last user left), broadcast updated active sessions
-            broadcastActiveSessions(io);
+            await deleteBackground(sessionId);
+            broadcastActiveSessions(io, manager);
           }
           break;
         }

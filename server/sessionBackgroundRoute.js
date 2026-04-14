@@ -25,7 +25,12 @@ export function validateSessionName(value) {
   return { isValid: true, value: trimmedValue };
 }
 
-export function createSessionBackgroundHandler({ generateSessionBackground, mapErrorToStatus }) {
+export function createSessionBackgroundHandler({
+  generateSessionBackground,
+  ensureSessionBackground,
+  getSessionBackground,
+  mapErrorToStatus
+}) {
   return async function handleSessionBackground(req, res) {
     const validation = validateSessionName(req.body?.sessionName);
     if (!validation.isValid) {
@@ -34,7 +39,12 @@ export function createSessionBackgroundHandler({ generateSessionBackground, mapE
     }
 
     try {
-      const result = await generateSessionBackground(validation.value);
+      const ensureBackground = ensureSessionBackground || generateSessionBackground;
+      const cachedResult =
+        typeof getSessionBackground === 'function'
+          ? await getSessionBackground(validation.value)
+          : null;
+      const result = cachedResult || (await ensureBackground(validation.value));
       res.setHeader('Content-Type', result.mimeType);
       res.status(200).send(result.buffer);
     } catch (error) {
