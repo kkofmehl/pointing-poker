@@ -3,6 +3,10 @@ import { nextTick } from 'vue';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import App from '../App.vue';
 import { socketService } from '../services/socketService.js';
+import {
+  applySessionBackground,
+  clearSessionBackground
+} from '../services/backgroundImageService.js';
 import { CURRENT_SESSION_STORAGE_KEY as SESSION_STORAGE_KEY } from '../utils/sessionPersistence.js';
 
 vi.mock('../services/socketService.js', () => {
@@ -28,6 +32,7 @@ vi.mock('../services/socketService.js', () => {
           handlers.delete('connect');
         }
       }),
+      getSocketId: vi.fn(() => 'socket-1'),
       __trigger(event, payload) {
         const callback = handlers.get(event);
         if (callback) {
@@ -40,6 +45,11 @@ vi.mock('../services/socketService.js', () => {
     }
   };
 });
+
+vi.mock('../services/backgroundImageService.js', () => ({
+  applySessionBackground: vi.fn(() => Promise.resolve()),
+  clearSessionBackground: vi.fn()
+}));
 
 const stubs = {
   SessionJoin: {
@@ -130,6 +140,7 @@ describe('App session persistence', () => {
 
     await wrapper.find('[data-test="leave-btn"]').trigger('click');
     expect(sessionStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+    expect(clearSessionBackground).toHaveBeenCalled();
   });
 
   it('clears persisted session when session is closed', async () => {
@@ -159,5 +170,73 @@ describe('App session persistence', () => {
 
     expect(sessionStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
     expect(wrapper.find('[data-test="session-join-view"]').exists()).toBe(true);
+    expect(clearSessionBackground).toHaveBeenCalled();
+  });
+
+  it('requests a generated background after successful join', async () => {
+    mount(App, {
+      global: { stubs }
+    });
+
+    socketService.__trigger('session_state', {
+      sessionId: 'Neo Retreat',
+      users: [{ id: 'socket-1', name: 'Casey' }],
+      votes: {},
+      confidences: {},
+      selectedCards: [],
+      allVoted: false
+    });
+    await nextTick();
+    await Promise.resolve();
+
+    expect(applySessionBackground).toHaveBeenCalledWith('Neo Retreat');
+  });
+
+  it('does not repeatedly request background for same session', async () => {
+    mount(App, {
+      global: { stubs }
+    });
+
+    const sessionStatePayload = {
+      sessionId: 'Neo Retreat',
+      users: [{ id: 'socket-1', name: 'Casey' }],
+      votes: {},
+      confidences: {},
+      selectedCards: [],
+      allVoted: false
+    };
+
+    socketService.__trigger('session_state', sessionStatePayload);
+    await nextTick();
+    await Promise.resolve();
+
+    socketService.__trigger('session_state', sessionStatePayload);
+    await nextTick();
+    await Promise.resolve();
+
+    expect(applySessionBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps app stable when background request fails', async () => {
+    applySessionBackground.mockRejectedValueOnce(new Error('request failed'));
+
+    const wrapper = mount(App, {
+      global: { stubs }
+    });
+
+    socketService.__trigger('session_state', {
+      sessionId: 'Neo Retreat',
+      users: [{ id: 'socket-1', name: 'Casey' }],
+      votes: {},
+      confidences: {},
+      selectedCards: [],
+      allVoted: false
+    });
+    await nextTick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wrapper.find('[data-test="voting-room-view"]').exists()).toBe(true);
+    expect(clearSessionBackground).toHaveBeenCalled();
   });
 });

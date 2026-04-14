@@ -17,6 +17,10 @@ import SessionJoin from './components/SessionJoin.vue';
 import VotingRoom from './components/VotingRoom.vue';
 import { socketService } from './services/socketService.js';
 import {
+  applySessionBackground,
+  clearSessionBackground
+} from './services/backgroundImageService.js';
+import {
   clearPersistedSession,
   persistSession,
   readPersistedSession
@@ -26,6 +30,7 @@ const joined = ref(false);
 const sessionId = ref('');
 const userName = ref('');
 const sessionState = ref({});
+const backgroundLoadedForSessionId = ref('');
 
 function getCurrentUserNameFromState(state) {
   const socketId = socketService.getSocketId();
@@ -70,15 +75,26 @@ function handleSessionClosed() {
 }
 
 function handleJoined(data) {
+  const previousSessionId = sessionId.value;
   sessionId.value = data.sessionId;
   userName.value = data.userName;
   sessionState.value = data.sessionState;
   joined.value = true;
   persistSession(data.sessionId, data.userName);
+
+  if (backgroundLoadedForSessionId.value !== data.sessionId || previousSessionId !== data.sessionId) {
+    backgroundLoadedForSessionId.value = data.sessionId;
+    void applySessionBackground(data.sessionId).catch((backgroundError) => {
+      console.error('Failed to apply session background image:', backgroundError);
+      clearSessionBackground();
+    });
+  }
 }
 
 function handleLeave() {
   clearPersistedSession();
+  clearSessionBackground();
+  backgroundLoadedForSessionId.value = '';
   joined.value = false;
   sessionId.value = '';
   userName.value = '';
