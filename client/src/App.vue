@@ -32,6 +32,22 @@ const userName = ref('');
 const sessionState = ref({});
 const backgroundLoadedForSessionId = ref('');
 
+function requestSessionBackground(targetSessionId) {
+  if (!targetSessionId) {
+    return;
+  }
+
+  if (backgroundLoadedForSessionId.value === targetSessionId) {
+    return;
+  }
+
+  backgroundLoadedForSessionId.value = targetSessionId;
+  void applySessionBackground(targetSessionId).catch((backgroundError) => {
+    console.error('Failed to apply session background image:', backgroundError);
+    clearSessionBackground();
+  });
+}
+
 function getCurrentUserNameFromState(state) {
   const socketId = socketService.getSocketId();
   if (!socketId || !Array.isArray(state?.users)) {
@@ -74,6 +90,18 @@ function handleSessionClosed() {
   handleLeave();
 }
 
+function handleSessionBackgroundReady(data) {
+  if (!joined.value) {
+    return;
+  }
+
+  if (data?.sessionId !== sessionId.value) {
+    return;
+  }
+
+  requestSessionBackground(data.sessionId);
+}
+
 function handleJoined(data) {
   const previousSessionId = sessionId.value;
   sessionId.value = data.sessionId;
@@ -82,12 +110,9 @@ function handleJoined(data) {
   joined.value = true;
   persistSession(data.sessionId, data.userName);
 
-  if (backgroundLoadedForSessionId.value !== data.sessionId || previousSessionId !== data.sessionId) {
-    backgroundLoadedForSessionId.value = data.sessionId;
-    void applySessionBackground(data.sessionId).catch((backgroundError) => {
-      console.error('Failed to apply session background image:', backgroundError);
-      clearSessionBackground();
-    });
+  if (previousSessionId && previousSessionId !== data.sessionId) {
+    clearSessionBackground();
+    backgroundLoadedForSessionId.value = '';
   }
 }
 
@@ -105,6 +130,7 @@ onMounted(() => {
   socketService.onConnect(autoRejoinPersistedSession);
   socketService.on('session_state', handleSessionState);
   socketService.on('session_closed', handleSessionClosed);
+  socketService.on('session_background_ready', handleSessionBackgroundReady);
   autoRejoinPersistedSession();
 });
 
@@ -112,6 +138,7 @@ onUnmounted(() => {
   socketService.offConnect(autoRejoinPersistedSession);
   socketService.off('session_state', handleSessionState);
   socketService.off('session_closed', handleSessionClosed);
+  socketService.off('session_background_ready', handleSessionBackgroundReady);
 });
 </script>
 

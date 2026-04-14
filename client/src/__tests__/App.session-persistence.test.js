@@ -173,7 +173,7 @@ describe('App session persistence', () => {
     expect(clearSessionBackground).toHaveBeenCalled();
   });
 
-  it('requests a generated background after successful join', async () => {
+  it('requests a generated background when session background is ready', async () => {
     mount(App, {
       global: { stubs }
     });
@@ -186,6 +186,8 @@ describe('App session persistence', () => {
       selectedCards: [],
       allVoted: false
     });
+    await nextTick();
+    socketService.__trigger('session_background_ready', { sessionId: 'Neo Retreat' });
     await nextTick();
     await Promise.resolve();
 
@@ -208,9 +210,11 @@ describe('App session persistence', () => {
 
     socketService.__trigger('session_state', sessionStatePayload);
     await nextTick();
+    socketService.__trigger('session_background_ready', { sessionId: 'Neo Retreat' });
+    await nextTick();
     await Promise.resolve();
 
-    socketService.__trigger('session_state', sessionStatePayload);
+    socketService.__trigger('session_background_ready', { sessionId: 'Neo Retreat' });
     await nextTick();
     await Promise.resolve();
 
@@ -232,6 +236,8 @@ describe('App session persistence', () => {
       selectedCards: [],
       allVoted: false
     });
+    await nextTick();
+    socketService.__trigger('session_background_ready', { sessionId: 'Neo Retreat' });
     await nextTick();
     await Promise.resolve();
     await Promise.resolve();

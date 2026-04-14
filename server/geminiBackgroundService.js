@@ -1,3 +1,5 @@
+import nodeFetch from 'node-fetch';
+
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const HUGGING_FACE_API_BASE_URL = 'https://router.huggingface.co/hf-inference/models';
 const CACHE_TTL_MS = 1000 * 60 * 60;
@@ -7,6 +9,14 @@ const DEFAULT_IMAGE_MODELS = ['gemini-3.1-flash-image-preview'];
 const DEFAULT_HUGGING_FACE_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0';
 
 const imageCache = new Map();
+
+function fetchWithFallback(...args) {
+  if (typeof globalThis.fetch === 'function') {
+    return globalThis.fetch(...args);
+  }
+
+  return nodeFetch(...args);
+}
 
 function buildPrompt(sessionName) {
   return [
@@ -98,7 +108,7 @@ async function requestGeminiImage({ sessionName, apiKey, abortController }) {
   let lastError = null;
 
   for (const model of candidateModels) {
-    const response = await fetch(
+    const response = await fetchWithFallback(
       `${GEMINI_API_BASE_URL}/${model}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
@@ -158,7 +168,7 @@ async function requestGeminiImage({ sessionName, apiKey, abortController }) {
 
 async function requestHuggingFaceImage({ sessionName, apiKey, abortController }) {
   const model = process.env.HUGGING_FACE_IMAGE_MODEL?.trim() || DEFAULT_HUGGING_FACE_MODEL;
-  const generationResponse = await fetch(`${HUGGING_FACE_API_BASE_URL}/${model}`, {
+  const generationResponse = await fetchWithFallback(`${HUGGING_FACE_API_BASE_URL}/${model}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,

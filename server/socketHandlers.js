@@ -1,4 +1,5 @@
 import { sessionManager } from './sessionManager.js';
+import { generateSessionBackground } from './geminiBackgroundService.js';
 
 // Helper function to broadcast active sessions to all clients
 function broadcastActiveSessions(io) {
@@ -25,6 +26,20 @@ function buildSessionState(session) {
     selectedCards: Array.from(session.selectedCards.keys()),
     allVoted: session.allVoted
   };
+}
+
+async function generateAndBroadcastSessionBackground(io, sessionId) {
+  try {
+    await generateSessionBackground(sessionId);
+    io.to(sessionId).emit('session_background_ready', { sessionId });
+  } catch (error) {
+    console.error('Error generating shared session background', {
+      sessionId,
+      errorCode: error?.code || 'UNKNOWN',
+      errorMessage: error?.message || 'Unknown error',
+      errorDetails: error?.details || null
+    });
+  }
 }
 
 export function setupSocketHandlers(io) {
@@ -72,6 +87,9 @@ export function setupSocketHandlers(io) {
         if (wasNewSession) {
           broadcastActiveSessions(io);
         }
+
+        // Ensure all participants can apply the same generated background.
+        void generateAndBroadcastSessionBackground(io, sessionId);
       } catch (error) {
         console.error('Error joining session:', error);
         socket.emit('error', { message: 'Error joining session' });
