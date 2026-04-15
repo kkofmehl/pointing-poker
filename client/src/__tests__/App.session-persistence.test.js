@@ -76,6 +76,9 @@ describe('App session persistence', () => {
     });
 
     expect(wrapper.find('[data-test="session-join-view"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain(
+      'Feel no obligation, but if you want to help offset hosting costs of this dandy little app'
+    );
     expect(socketService.emit).not.toHaveBeenCalledWith(
       'join_session',
       expect.any(Object)

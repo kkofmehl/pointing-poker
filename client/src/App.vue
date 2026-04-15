@@ -1,13 +1,21 @@
 <template>
   <div id="app">
-    <SessionJoin v-if="!joined" @joined="handleJoined" />
-    <VotingRoom
-      v-else
-      :session-id="sessionId"
-      :user-name="userName"
-      :initial-session-state="sessionState"
-      @leave="handleLeave"
-    />
+    <main class="app-content">
+      <SessionJoin v-if="!joined" @joined="handleJoined" />
+      <VotingRoom
+        v-else
+        :session-id="sessionId"
+        :user-name="userName"
+        :initial-session-state="sessionState"
+        @leave="handleLeave"
+      />
+    </main>
+    <footer class="app-footer">
+      Feel no obligation, but if you want to help offset hosting costs of this dandy little app,
+      Venmo @kmozzler or Paypal kkash2206@gmail.com
+      <br>
+      © {{ new Date().getFullYear() }} Kmofy Consulting
+    </footer>
   </div>
 </template>
 
@@ -144,7 +152,22 @@ onUnmounted(() => {
 
 <style>
 #app {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
+}
+
+.app-content {
+  flex: 1;
+}
+
+.app-footer {
+  margin-top: 16px;
+  padding: 10px 4px 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.72);
 }
 </style>
 
