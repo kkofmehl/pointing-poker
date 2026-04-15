@@ -1,5 +1,28 @@
 <template>
   <div class="results-display">
+    <div
+      v-if="showConsensusCelebration"
+      class="consensus-celebration"
+      data-test="consensus-celebration"
+      aria-live="polite"
+    >
+      <div class="confetti-layer" aria-hidden="true">
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+        <span class="confetti-piece"></span>
+      </div>
+      <div class="balloon-layer" aria-hidden="true">
+        <span class="balloon"></span>
+        <span class="balloon"></span>
+        <span class="balloon"></span>
+      </div>
+      <div class="consensus-text">Consensus!</div>
+    </div>
     <h2 class="results-title fade-in">All Votes Revealed!</h2>
     
     <div class="results-grid">
@@ -45,7 +68,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { getCardColor, getCardConfig } from '../config/cards.js';
 
 const props = defineProps({
@@ -86,6 +109,38 @@ const voteValues = computed(() => {
 const hasVotes = computed(() => {
   return voteValues.value.length > 0;
 });
+
+const unanimousNumericVotes = computed(() => {
+  if (!hasVotes.value) {
+    return false;
+  }
+  const firstVote = voteValues.value[0];
+  return voteValues.value.every(vote => vote === firstVote);
+});
+
+const showConsensusCelebration = ref(false);
+let consensusTimerId = null;
+
+function clearConsensusTimer() {
+  if (consensusTimerId !== null) {
+    clearTimeout(consensusTimerId);
+    consensusTimerId = null;
+  }
+}
+
+watch(unanimousNumericVotes, isConsensus => {
+  clearConsensusTimer();
+  if (!isConsensus) {
+    showConsensusCelebration.value = false;
+    return;
+  }
+
+  showConsensusCelebration.value = true;
+  consensusTimerId = setTimeout(() => {
+    showConsensusCelebration.value = false;
+    consensusTimerId = null;
+  }, 3000);
+}, { immediate: true });
 
 const average = computed(() => {
   if (!hasVotes.value) return 0;
@@ -203,11 +258,102 @@ function shouldShowConfidence(userId) {
   }
   return true;
 }
+
+onUnmounted(() => {
+  clearConsensusTimer();
+});
 </script>
 
 <style scoped>
 .results-display {
+  position: relative;
   text-align: center;
+}
+
+.consensus-celebration {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.consensus-text {
+  color: #fff;
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+  animation: pulseConsensus 0.8s ease-in-out infinite alternate;
+}
+
+.confetti-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.confetti-piece {
+  position: absolute;
+  width: 10px;
+  height: 18px;
+  border-radius: 2px;
+  opacity: 0.9;
+  animation: confettiFall 1.7s linear infinite;
+}
+
+.confetti-piece:nth-child(1) { left: 6%; background: #ef5350; animation-delay: 0s; }
+.confetti-piece:nth-child(2) { left: 18%; background: #ffca28; animation-delay: 0.15s; }
+.confetti-piece:nth-child(3) { left: 29%; background: #42a5f5; animation-delay: 0.35s; }
+.confetti-piece:nth-child(4) { left: 40%; background: #66bb6a; animation-delay: 0.2s; }
+.confetti-piece:nth-child(5) { left: 56%; background: #ab47bc; animation-delay: 0.5s; }
+.confetti-piece:nth-child(6) { left: 68%; background: #ffa726; animation-delay: 0.65s; }
+.confetti-piece:nth-child(7) { left: 80%; background: #26c6da; animation-delay: 0.1s; }
+.confetti-piece:nth-child(8) { left: 92%; background: #ec407a; animation-delay: 0.45s; }
+
+.balloon-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.balloon {
+  position: absolute;
+  bottom: -40px;
+  width: 34px;
+  height: 42px;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: balloonRise 2.2s ease-in infinite;
+}
+
+.balloon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.balloon:nth-child(1) {
+  left: 12%;
+  background: radial-gradient(circle at 30% 25%, #ffffff 0%, #ef5350 35%, #d32f2f 100%);
+  animation-delay: 0s;
+}
+
+.balloon:nth-child(2) {
+  left: 50%;
+  background: radial-gradient(circle at 30% 25%, #ffffff 0%, #42a5f5 35%, #1e88e5 100%);
+  animation-delay: 0.4s;
+}
+
+.balloon:nth-child(3) {
+  left: 84%;
+  background: radial-gradient(circle at 30% 25%, #ffffff 0%, #66bb6a 35%, #43a047 100%);
+  animation-delay: 0.8s;
 }
 
 @keyframes fadeIn {
@@ -224,6 +370,40 @@ function shouldShowConfidence(userId) {
 .fade-in {
   animation: fadeIn 0.8s ease-out forwards;
   opacity: 0;
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-20%) rotate(0deg);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(120%) rotate(340deg);
+    opacity: 0.2;
+  }
+}
+
+@keyframes balloonRise {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(-180px) rotate(10deg);
+    opacity: 0;
+  }
+}
+
+@keyframes pulseConsensus {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
 }
 
 .results-title {
