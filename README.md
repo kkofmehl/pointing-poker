@@ -54,6 +54,69 @@ npm run dev
 
 3. Open your browser to `http://localhost:5173`
 
+### Optional: Gemini Session Backgrounds
+
+If you want AI-generated background images per session:
+
+1. Create an API key in [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Set the key for the backend process:
+```bash
+cd server
+export GEMINI_API_KEY="your_api_key_here"
+npm run dev
+```
+
+You can also place `GEMINI_API_KEY=...` in the project root `.env`; the server auto-loads that file on startup.
+
+The server caches generated session background images on disk:
+- Local default: `server/.cache/session-backgrounds`
+- Override path with `SESSION_BACKGROUND_CACHE_DIR=/custom/path`
+- Cached files are removed automatically when a session is closed or deleted
+
+Optional: if you need to force a specific Gemini model, set:
+```bash
+export GEMINI_IMAGE_MODEL="gemini-2.5-flash-image-preview"
+```
+3. In another terminal, run the frontend:
+```bash
+cd client
+npm run dev
+```
+
+The frontend never sees this key. It only calls the backend endpoint (`POST /api/session-background`), and the backend calls Gemini.
+
+### Optional: Hugging Face Fallback (or primary)
+
+You can also use Hugging Face for image generation. The backend will try providers in this order:
+
+1. Gemini (`GEMINI_API_KEY`) if configured
+2. Hugging Face (`HUGGING_FACE_API_KEY`) as fallback
+
+If you only set `HUGGING_FACE_API_KEY`, Hugging Face becomes the primary provider.
+
+Add to root `.env`:
+```bash
+HUGGING_FACE_API_KEY="your_hugging_face_api_key"
+# optional model override
+HUGGING_FACE_IMAGE_MODEL="stabilityai/stable-diffusion-xl-base-1.0"
+# optional provider override (default: auto)
+HUGGING_FACE_PROVIDER="auto"
+```
+
+Provider notes:
+- `HUGGING_FACE_PROVIDER="auto"` lets Hugging Face route to a compatible provider.
+- You can pin a provider such as `fal-ai` when a model requires it.
+
+Quick verification from your shell:
+```bash
+curl -X POST http://localhost:3000/api/session-background \
+  -H "Content-Type: application/json" \
+  -d '{"sessionName":"Gandalf'\''s Tower"}' \
+  --output session-bg.png
+```
+
+If successful, `session-bg.png` should be an image file.
+
 ## Deployment to Fly.io
 
 1. Install the Fly CLI if you haven't already:
@@ -70,6 +133,23 @@ fly auth login
 ```bash
 fly deploy
 ```
+
+4. Set Gemini API key in Fly secrets (server-side only):
+```bash
+fly secrets set GEMINI_API_KEY="your_api_key_here"
+```
+
+Optional Hugging Face secret:
+```bash
+fly secrets set HUGGING_FACE_API_KEY="your_hugging_face_api_key"
+```
+
+5. Create and attach a Fly volume for image cache persistence:
+```bash
+fly volumes create session_backgrounds --region iad --size 1
+```
+
+`fly.toml` mounts this volume at `/data` and the app writes cache files to `/data/session-backgrounds`.
 
 The application will be available at `https://pointing-poker.fly.dev` (or your configured app name).
 
