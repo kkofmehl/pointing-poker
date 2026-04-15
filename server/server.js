@@ -2,13 +2,22 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { setupSocketHandlers } from './socketHandlers.js';
 import { sessionManager } from './sessionManager.js';
+import {
+  ensureSessionBackground,
+  getSessionBackground,
+  generateSessionBackground,
+  mapGeminiErrorToHttpStatus
+} from './geminiBackgroundService.js';
+import { createSessionBackgroundHandler } from './sessionBackgroundRoute.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, '../.env') });
 
 const app = express();
 const httpServer = createServer(app);
@@ -24,6 +33,16 @@ const io = new Server(httpServer, {
 
 app.use(cors());
 app.use(express.json());
+
+app.post(
+  '/api/session-background',
+  createSessionBackgroundHandler({
+    ensureSessionBackground,
+    getSessionBackground,
+    generateSessionBackground,
+    mapErrorToStatus: mapGeminiErrorToHttpStatus
+  })
+);
 
 // Serve static files from client dist in production
 if (process.env.NODE_ENV === 'production') {

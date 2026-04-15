@@ -6,6 +6,11 @@ primary_region = "iad"
 [env]
   NODE_ENV = "production"
   PORT = "3000"
+  SESSION_BACKGROUND_CACHE_DIR = "/data/session-backgrounds"
+
+[[mounts]]
+  source = "session_backgrounds"
+  destination = "/data"
 
 [http_service]
   internal_port = 3000
