@@ -71,7 +71,8 @@ You can also place `GEMINI_API_KEY=...` in the project root `.env`; the server a
 The server caches generated session background images on disk:
 - Local default: `server/.cache/session-backgrounds`
 - Override path with `SESSION_BACKGROUND_CACHE_DIR=/custom/path`
-- Cached files are removed automatically when a session is closed or deleted
+- Files are named from the session name (for example `Superman_s_Den.bin`) and keep character/place metadata
+- Images are retained after sessions end and reused as an archive fallback when Gemini/Hugging Face fail or return no image (match character and place, then either, otherwise a random saved image)
 
 Optional: if you need to force a specific Gemini model, set:
 ```bash
@@ -91,6 +92,7 @@ You can also use Hugging Face for image generation. The backend will try provide
 
 1. Gemini (`GEMINI_API_KEY`) if configured
 2. Hugging Face (`HUGGING_FACE_API_KEY`) as fallback
+3. Saved session-background archive on disk (character/place match, then random)
 
 If you only set `HUGGING_FACE_API_KEY`, Hugging Face becomes the primary provider.
 
@@ -149,7 +151,7 @@ fly secrets set HUGGING_FACE_API_KEY="your_hugging_face_api_key"
 fly volumes create session_backgrounds --region iad --size 1
 ```
 
-`fly.toml` mounts this volume at `/data` and the app writes cache files to `/data/session-backgrounds`.
+`fly.toml` mounts this volume at `/data` and the app writes retained cache/archive files to `/data/session-backgrounds`.
 
 The application will be available at `https://pointing-poker.fly.dev` (or your configured app name).
 

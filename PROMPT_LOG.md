@@ -39,3 +39,12 @@
 ## 2026-05-19
 
 - "I want to adjust the fly.toml so that this app susspends when not used and starts up when hit."
+
+## 2026-07-23
+
+- "I have ended my subscription to hugging face. However, I'll still get images for awhile.  Right now, we are deleting images when a session is closed. I would like to change that so that we store these images in the memory mount with a filename that ties it to session name that generated.  Build in a back-up sub routine that will search through the saved images if we start getting error responses or no images returned from hugging face.  Within the backup subroutine, the search through the past images can match on the charact or the place or both. If there are no hits, then a random image can just be used."
+- "Persist session images and archive fallback
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos."

@@ -68,7 +68,7 @@ function createFakeSocket(socketId = 'socket-1') {
   };
 }
 
-test('close_session deletes cached background image', async () => {
+test('close_session keeps background images for archive reuse', async () => {
   const io = createFakeIo();
   const socket = createFakeSocket();
   const deletedSessions = [];
@@ -91,10 +91,11 @@ test('close_session deletes cached background image', async () => {
   io.handlers.get('connection')(socket);
   await socket.handlers.get('close_session')({ sessionId: 'session-a' });
 
-  assert.deepEqual(deletedSessions, ['session-a']);
+  assert.deepEqual(deletedSessions, []);
+  assert.ok(io.roomMessages.some((message) => message.event === 'session_closed'));
 });
 
-test('leave_session removes cached image when last user leaves', async () => {
+test('leave_session keeps background image when last user leaves', async () => {
   const io = createFakeIo();
   const socket = createFakeSocket();
   const deletedSessions = [];
@@ -122,10 +123,11 @@ test('leave_session removes cached image when last user leaves', async () => {
   io.handlers.get('connection')(socket);
   await socket.handlers.get('leave_session')({ sessionId });
 
-  assert.deepEqual(deletedSessions, [sessionId]);
+  assert.deepEqual(deletedSessions, []);
+  assert.ok(io.globalMessages.some((message) => message.event === 'active_sessions_updated'));
 });
 
-test('disconnect removes cached image when last user disconnects', async () => {
+test('disconnect keeps background image when last user disconnects', async () => {
   const io = createFakeIo();
   const socket = createFakeSocket();
   const deletedSessions = [];
@@ -153,5 +155,6 @@ test('disconnect removes cached image when last user disconnects', async () => {
   io.handlers.get('connection')(socket);
   await socket.handlers.get('disconnect')();
 
-  assert.deepEqual(deletedSessions, [sessionId]);
+  assert.deepEqual(deletedSessions, []);
+  assert.ok(io.globalMessages.some((message) => message.event === 'active_sessions_updated'));
 });

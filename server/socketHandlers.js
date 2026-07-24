@@ -1,8 +1,5 @@
 import { sessionManager } from './sessionManager.js';
-import {
-  deleteSessionBackground,
-  ensureSessionBackground
-} from './geminiBackgroundService.js';
+import { ensureSessionBackground } from './geminiBackgroundService.js';
 
 // Helper function to broadcast active sessions to all clients
 function broadcastActiveSessions(io, manager) {
@@ -48,7 +45,6 @@ async function generateAndBroadcastSessionBackground(io, sessionId, ensureBackgr
 export function setupSocketHandlers(io, deps = {}) {
   const manager = deps.sessionManager || sessionManager;
   const ensureBackground = deps.ensureSessionBackground || ensureSessionBackground;
-  const deleteBackground = deps.deleteSessionBackground || deleteSessionBackground;
 
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -214,7 +210,7 @@ export function setupSocketHandlers(io, deps = {}) {
       }
     });
 
-    socket.on('close_session', async ({ sessionId }) => {
+    socket.on('close_session', ({ sessionId }) => {
       try {
         const session = manager.getSession(sessionId);
         if (!session) {
@@ -227,7 +223,6 @@ export function setupSocketHandlers(io, deps = {}) {
         });
         io.in(sessionId).socketsLeave(sessionId);
         manager.closeSession(sessionId);
-        await deleteBackground(sessionId);
         broadcastActiveSessions(io, manager);
       } catch (error) {
         console.error('Error closing session:', error);
@@ -235,7 +230,7 @@ export function setupSocketHandlers(io, deps = {}) {
       }
     });
 
-    socket.on('leave_session', async ({ sessionId }) => {
+    socket.on('leave_session', ({ sessionId }) => {
       try {
         // Leave the socket room
         socket.leave(sessionId);
@@ -257,7 +252,6 @@ export function setupSocketHandlers(io, deps = {}) {
             });
           } else if (wasLastUser) {
             // Session was deleted (last user left), broadcast updated active sessions
-            await deleteBackground(sessionId);
             broadcastActiveSessions(io, manager);
           }
         }
@@ -267,7 +261,7 @@ export function setupSocketHandlers(io, deps = {}) {
       }
     });
 
-    socket.on('disconnect', async () => {
+    socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
       
       // Find and remove user from their session
@@ -287,7 +281,6 @@ export function setupSocketHandlers(io, deps = {}) {
             });
           } else if (wasLastUser) {
             // Session was deleted (last user left), broadcast updated active sessions
-            await deleteBackground(sessionId);
             broadcastActiveSessions(io, manager);
           }
           break;

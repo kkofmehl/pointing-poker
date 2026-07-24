@@ -1,7 +1,6 @@
 import nodeFetch from 'node-fetch';
 import { InferenceClient } from '@huggingface/inference';
-import { mkdir, readFile, rm, writeFile } from 'fs/promises';
-import { createHash } from 'crypto';
+import { mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -14,6 +13,7 @@ const imageCache = new Map();
 const inFlightGeneration = new Map();
 const defaultHuggingFaceClientFactory = (apiKey) => new InferenceClient(apiKey);
 let huggingFaceClientFactory = defaultHuggingFaceClientFactory;
+let randomIndexSelector = (length) => Math.floor(Math.random() * length);
 
 function fetchWithFallback(...args) {
   if (typeof globalThis.fetch === 'function') {
@@ -36,6 +36,35 @@ function buildPrompt(sessionId) {
   ].join(' ');
 }
 
+export function parseSessionTheme(sessionName) {
+  const trimmed = String(sessionName || '').trim();
+  const match = trimmed.match(/^(.+?)['’]s\s+(.+)$/u);
+  if (!match) {
+    return {
+      sessionName: trimmed,
+      character: null,
+      place: null
+    };
+  }
+
+  return {
+    sessionName: trimmed,
+    character: match[1].trim() || null,
+    place: match[2].trim() || null
+  };
+}
+
+export function slugFromSessionName(sessionName) {
+  const slug = String(sessionName || '')
+    .trim()
+    .replace(/['’]/g, '_')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  return slug || 'session';
+}
+
 function getCacheDirectory() {
   return (
     process.env.SESSION_BACKGROUND_CACHE_DIR?.trim() ||
@@ -44,12 +73,13 @@ function getCacheDirectory() {
 }
 
 function getCacheFilePaths(sessionId) {
-  const cacheKey = createHash('sha256').update(sessionId).digest('hex');
+  const cacheKey = slugFromSessionName(sessionId);
   const cacheDirectory = getCacheDirectory();
 
   return {
     binaryPath: join(cacheDirectory, `${cacheKey}.bin`),
-    metadataPath: join(cacheDirectory, `${cacheKey}.json`)
+    metadataPath: join(cacheDirectory, `${cacheKey}.json`),
+    cacheKey
   };
 }
 
@@ -82,6 +112,7 @@ async function readCachedImageFromDisk(sessionId) {
 async function writeCachedImageToDisk(sessionId, imageData) {
   const cacheDirectory = getCacheDirectory();
   const { binaryPath, metadataPath } = getCacheFilePaths(sessionId);
+  const theme = parseSessionTheme(sessionId);
   await mkdir(cacheDirectory, { recursive: true });
 
   await Promise.all([
@@ -90,7 +121,10 @@ async function writeCachedImageToDisk(sessionId, imageData) {
       metadataPath,
       JSON.stringify(
         {
-          mimeType: imageData.mimeType
+          mimeType: imageData.mimeType,
+          sessionName: theme.sessionName,
+          character: theme.character,
+          place: theme.place
         },
         null,
         2
@@ -233,12 +267,31 @@ async function requestHuggingFaceImage({ sessionName, apiKey }) {
       }
     });
 
+    if (!imageBlob || typeof imageBlob.arrayBuffer !== 'function') {
+      const noImageError = new Error('Hugging Face response did not include an image');
+      noImageError.code = 'NO_IMAGE_IN_RESPONSE';
+      noImageError.provider = 'hugging_face';
+      throw noImageError;
+    }
+
     const imageArrayBuffer = await imageBlob.arrayBuffer();
+    const buffer = Buffer.from(imageArrayBuffer);
+    if (buffer.length === 0) {
+      const noImageError = new Error('Hugging Face response did not include an image');
+      noImageError.code = 'NO_IMAGE_IN_RESPONSE';
+      noImageError.provider = 'hugging_face';
+      throw noImageError;
+    }
+
     return {
-      buffer: Buffer.from(imageArrayBuffer),
+      buffer,
       mimeType: imageBlob.type || 'image/png'
     };
   } catch (error) {
+    if (error?.code === 'NO_IMAGE_IN_RESPONSE') {
+      throw error;
+    }
+
     const details =
       typeof error?.message === 'string' ? error.message : JSON.stringify(error || {});
     const huggingFaceError = new Error(
@@ -251,6 +304,119 @@ async function requestHuggingFaceImage({ sessionName, apiKey }) {
     }
     huggingFaceError.details = details;
     throw huggingFaceError;
+  }
+}
+
+function normalizeThemeValue(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function pickRandom(items) {
+  if (!items.length) {
+    return null;
+  }
+
+  return items[randomIndexSelector(items.length)];
+}
+
+async function listArchiveEntries() {
+  const cacheDirectory = getCacheDirectory();
+
+  let files;
+  try {
+    files = await readdir(cacheDirectory);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+
+  const entries = [];
+  for (const fileName of files) {
+    if (!fileName.endsWith('.json')) {
+      continue;
+    }
+
+    const cacheKey = fileName.slice(0, -'.json'.length);
+    const metadataPath = join(cacheDirectory, fileName);
+    const binaryPath = join(cacheDirectory, `${cacheKey}.bin`);
+
+    try {
+      const metadataRaw = await readFile(metadataPath, 'utf8');
+      const metadata = JSON.parse(metadataRaw);
+      if (typeof metadata?.mimeType !== 'string' || !metadata.mimeType.startsWith('image/')) {
+        continue;
+      }
+
+      entries.push({
+        cacheKey,
+        binaryPath,
+        mimeType: metadata.mimeType,
+        sessionName: metadata.sessionName || cacheKey,
+        character: metadata.character ?? null,
+        place: metadata.place ?? null
+      });
+    } catch {
+      // Skip unreadable or corrupt sidecars.
+    }
+  }
+
+  return entries;
+}
+
+export async function findArchiveBackground(sessionName) {
+  const entries = await listArchiveEntries();
+  if (!entries.length) {
+    return null;
+  }
+
+  const theme = parseSessionTheme(sessionName);
+  const requestedCharacter = normalizeThemeValue(theme.character);
+  const requestedPlace = normalizeThemeValue(theme.place);
+
+  const bothMatches = [];
+  const eitherMatches = [];
+
+  for (const entry of entries) {
+    const entryCharacter = normalizeThemeValue(entry.character);
+    const entryPlace = normalizeThemeValue(entry.place);
+    const characterHit =
+      Boolean(requestedCharacter) &&
+      Boolean(entryCharacter) &&
+      entryCharacter === requestedCharacter;
+    const placeHit =
+      Boolean(requestedPlace) && Boolean(entryPlace) && entryPlace === requestedPlace;
+
+    if (characterHit && placeHit) {
+      bothMatches.push(entry);
+    } else if (characterHit || placeHit) {
+      eitherMatches.push(entry);
+    }
+  }
+
+  const selected =
+    pickRandom(bothMatches) || pickRandom(eitherMatches) || pickRandom(entries);
+
+  if (!selected) {
+    return null;
+  }
+
+  try {
+    const buffer = await readFile(selected.binaryPath);
+    if (!buffer.length) {
+      return null;
+    }
+
+    return {
+      buffer,
+      mimeType: selected.mimeType
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -310,8 +476,20 @@ export async function ensureSessionBackground(sessionId) {
   }
 
   const generationPromise = (async () => {
-    const imageData = await generateFromProviders(sessionId);
-    await writeCachedImageToDisk(sessionId, imageData);
+    let imageData = null;
+    let generationError = null;
+
+    try {
+      imageData = await generateFromProviders(sessionId);
+      await writeCachedImageToDisk(sessionId, imageData);
+    } catch (error) {
+      generationError = error;
+      imageData = await findArchiveBackground(sessionId);
+      if (!imageData) {
+        throw generationError;
+      }
+    }
+
     setCachedImage(sessionId, imageData);
     return imageData;
   })().finally(() => {
@@ -325,12 +503,6 @@ export async function ensureSessionBackground(sessionId) {
 export async function deleteSessionBackground(sessionId) {
   imageCache.delete(sessionId);
   inFlightGeneration.delete(sessionId);
-
-  const { binaryPath, metadataPath } = getCacheFilePaths(sessionId);
-  await Promise.all([
-    rm(binaryPath, { force: true }),
-    rm(metadataPath, { force: true })
-  ]);
 }
 
 export async function generateSessionBackground(sessionId) {
@@ -341,8 +513,13 @@ export function __resetSessionBackgroundCacheForTests() {
   imageCache.clear();
   inFlightGeneration.clear();
   huggingFaceClientFactory = defaultHuggingFaceClientFactory;
+  randomIndexSelector = (length) => Math.floor(Math.random() * length);
 }
 
 export function __setHuggingFaceClientFactoryForTests(factory) {
   huggingFaceClientFactory = factory;
+}
+
+export function __setRandomIndexSelectorForTests(selector) {
+  randomIndexSelector = selector;
 }
