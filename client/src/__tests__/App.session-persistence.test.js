@@ -197,6 +197,29 @@ describe('App session persistence', () => {
     expect(applySessionBackground).toHaveBeenCalledWith('Neo Retreat');
   });
 
+  it('requests background on join even if ready event arrived too early', async () => {
+    mount(App, {
+      global: { stubs }
+    });
+
+    socketService.__trigger('session_background_ready', { sessionId: 'Neo Retreat' });
+    await nextTick();
+    expect(applySessionBackground).not.toHaveBeenCalled();
+
+    socketService.__trigger('session_state', {
+      sessionId: 'Neo Retreat',
+      users: [{ id: 'socket-1', name: 'Casey' }],
+      votes: {},
+      confidences: {},
+      selectedCards: [],
+      allVoted: false
+    });
+    await nextTick();
+    await Promise.resolve();
+
+    expect(applySessionBackground).toHaveBeenCalledWith('Neo Retreat');
+  });
+
   it('does not repeatedly request background for same session', async () => {
     mount(App, {
       global: { stubs }

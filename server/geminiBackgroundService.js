@@ -4,11 +4,15 @@ import { mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const REQUEST_TIMEOUT_MS = 12000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 12000;
 const DEFAULT_IMAGE_MODELS = ['gemini-3.1-flash-image-preview'];
 const DEFAULT_HUGGING_FACE_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0';
 const DEFAULT_HUGGING_FACE_PROVIDER = 'auto';
 
+function getRequestTimeoutMs() {
+  const configured = Number(process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_REQUEST_TIMEOUT_MS;
+}
 const imageCache = new Map();
 const inFlightGeneration = new Map();
 const defaultHuggingFaceClientFactory = (apiKey) => new InferenceClient(apiKey);
@@ -252,20 +256,49 @@ async function requestGeminiImage({ sessionId, apiKey, abortController }) {
   throw lastError || new Error('No Gemini image model candidates succeeded');
 }
 
-async function requestHuggingFaceImage({ sessionName, apiKey }) {
+function createTimeoutError(message) {
+  const timeoutError = new Error(message);
+  timeoutError.name = 'AbortError';
+  timeoutError.code = 'REQUEST_TIMEOUT';
+  return timeoutError;
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(createTimeoutError(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function requestHuggingFaceImage({ sessionName, apiKey, abortController }) {
   const model = process.env.HUGGING_FACE_IMAGE_MODEL?.trim() || DEFAULT_HUGGING_FACE_MODEL;
   const provider = process.env.HUGGING_FACE_PROVIDER?.trim() || DEFAULT_HUGGING_FACE_PROVIDER;
   const client = huggingFaceClientFactory(apiKey);
 
   try {
-    const imageBlob = await client.textToImage({
-      provider,
-      model,
-      inputs: buildPrompt(sessionName),
-      options: {
-        wait_for_model: true
-      }
-    });
+    if (abortController?.signal?.aborted) {
+      throw createTimeoutError('Hugging Face request timed out');
+    }
+
+    const imageBlob = await withTimeout(
+      client.textToImage({
+        provider,
+        model,
+        inputs: buildPrompt(sessionName),
+        options: {
+          wait_for_model: true
+        }
+      }),
+      getRequestTimeoutMs(),
+      'Hugging Face request timed out'
+    );
 
     if (!imageBlob || typeof imageBlob.arrayBuffer !== 'function') {
       const noImageError = new Error('Hugging Face response did not include an image');
@@ -290,6 +323,12 @@ async function requestHuggingFaceImage({ sessionName, apiKey }) {
   } catch (error) {
     if (error?.code === 'NO_IMAGE_IN_RESPONSE') {
       throw error;
+    }
+
+    if (error?.name === 'AbortError' || error?.code === 'REQUEST_TIMEOUT') {
+      const timeoutError = createTimeoutError('Hugging Face request timed out');
+      timeoutError.provider = 'hugging_face';
+      throw timeoutError;
     }
 
     const details =
@@ -432,7 +471,7 @@ async function generateFromProviders(sessionId) {
   }
 
   const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => abortController.abort(), getRequestTimeoutMs());
 
   try {
     let lastError = null;
@@ -451,12 +490,16 @@ async function generateFromProviders(sessionId) {
     }
 
     if (huggingFaceApiKey) {
-      const imageData = await requestHuggingFaceImage({
-        sessionName: sessionId,
-        apiKey: huggingFaceApiKey,
-        abortController
-      });
-      return imageData;
+      try {
+        const imageData = await requestHuggingFaceImage({
+          sessionName: sessionId,
+          apiKey: huggingFaceApiKey,
+          abortController
+        });
+        return imageData;
+      } catch (error) {
+        lastError = error;
+      }
     }
 
     throw lastError || new Error('No image providers succeeded');

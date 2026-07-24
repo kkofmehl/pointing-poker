@@ -52,6 +52,9 @@ function requestSessionBackground(targetSessionId) {
   backgroundLoadedForSessionId.value = targetSessionId;
   void applySessionBackground(targetSessionId).catch((backgroundError) => {
     console.error('Failed to apply session background image:', backgroundError);
+    if (backgroundLoadedForSessionId.value === targetSessionId) {
+      backgroundLoadedForSessionId.value = '';
+    }
     clearSessionBackground();
   });
 }
@@ -107,6 +110,7 @@ function handleSessionBackgroundReady(data) {
     return;
   }
 
+  // Generation may finish after join; dedupe via backgroundLoadedForSessionId.
   requestSessionBackground(data.sessionId);
 }
 
@@ -122,6 +126,10 @@ function handleJoined(data) {
     clearSessionBackground();
     backgroundLoadedForSessionId.value = '';
   }
+
+  // Request immediately on join so a fast cache/archive hit that emits
+  // session_background_ready before joined=true is not missed.
+  requestSessionBackground(data.sessionId);
 }
 
 function handleLeave() {

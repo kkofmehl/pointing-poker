@@ -20,6 +20,7 @@ const originalFetch = global.fetch;
 const originalGeminiKey = process.env.GEMINI_API_KEY;
 const originalHuggingFaceKey = process.env.HUGGING_FACE_API_KEY;
 const originalCacheDir = process.env.SESSION_BACKGROUND_CACHE_DIR;
+const originalRequestTimeout = process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS;
 let tempCacheDir = null;
 
 beforeEach(() => {
@@ -27,6 +28,7 @@ beforeEach(() => {
   delete process.env.GEMINI_API_KEY;
   delete process.env.HUGGING_FACE_API_KEY;
   delete process.env.SESSION_BACKGROUND_CACHE_DIR;
+  delete process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS;
 });
 
 afterEach(async () => {
@@ -49,6 +51,12 @@ afterEach(async () => {
     process.env.SESSION_BACKGROUND_CACHE_DIR = originalCacheDir;
   } else {
     delete process.env.SESSION_BACKGROUND_CACHE_DIR;
+  }
+
+  if (originalRequestTimeout) {
+    process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS = originalRequestTimeout;
+  } else {
+    delete process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS;
   }
 
   if (tempCacheDir) {
@@ -345,6 +353,24 @@ test('uses archive when no provider keys are configured', async () => {
 
   const result = await ensureSessionBackground("Neo's Vault");
   assert.deepEqual(Array.from(result.buffer), [8, 8, 8]);
+});
+
+test('times out hanging Hugging Face calls and falls back to archive', async () => {
+  process.env.HUGGING_FACE_API_KEY = 'hf-key';
+  process.env.SESSION_BACKGROUND_REQUEST_TIMEOUT_MS = '40';
+  tempCacheDir = await mkdtemp(join(tmpdir(), 'pp-bg-cache-'));
+  process.env.SESSION_BACKGROUND_CACHE_DIR = tempCacheDir;
+
+  await writeArchiveEntry({ sessionName: "Yoda's Library", bufferBytes: [9, 9, 9] });
+
+  __setHuggingFaceClientFactoryForTests(() => ({
+    async textToImage() {
+      await new Promise(() => {});
+    }
+  }));
+
+  const result = await ensureSessionBackground("Yoda's Vault");
+  assert.deepEqual(Array.from(result.buffer), [9, 9, 9]);
 });
 
 test('fails when providers fail and archive is empty', async () => {
