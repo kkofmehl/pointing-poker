@@ -50,3 +50,12 @@ Implement the plan as specified, it is attached for your reference. Do NOT edit 
 To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos."
 
 - "I pushed this out to fly.io and I'm not getting any images now so we might have a bug"
+
+## 2026-08-26
+
+- "There is already a little fanfare celebration if all votes are the same.  I'd like to add another fun event if all people have the same vote and the same confidence. If that condition gets met, I want the entire screen to have a fade in gray-out effect and then have the @public/lovyyn-proud.webp image fade in at the center of the screen. The whole thing should take 4 seconds and then the screen should go back and then the regular consensus animation should play at that point."
+- "Proud Consensus Overlay
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos."

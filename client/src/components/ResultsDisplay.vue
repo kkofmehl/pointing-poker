@@ -1,5 +1,21 @@
 <template>
   <div class="results-display">
+    <Teleport to="body">
+      <div
+        v-if="showProudCelebration"
+        class="proud-celebration"
+        data-test="proud-celebration"
+        aria-live="polite"
+        aria-hidden="true"
+      >
+        <div class="proud-scrim"></div>
+        <img
+          class="proud-image"
+          :src="proudImageSrc"
+          alt=""
+        >
+      </div>
+    </Teleport>
     <div
       v-if="showConsensusCelebration"
       class="consensus-celebration"
@@ -118,8 +134,21 @@ const unanimousNumericVotes = computed(() => {
   return voteValues.value.every(vote => vote === firstVote);
 });
 
+const PROUD_CELEBRATION_MS = 6000;
+const CONSENSUS_CELEBRATION_MS = 4000;
+const proudImageSrc = '/lovyyn-proud.webp';
+
+const showProudCelebration = ref(false);
 const showConsensusCelebration = ref(false);
+let proudTimerId = null;
 let consensusTimerId = null;
+
+function clearProudTimer() {
+  if (proudTimerId !== null) {
+    clearTimeout(proudTimerId);
+    proudTimerId = null;
+  }
+}
 
 function clearConsensusTimer() {
   if (consensusTimerId !== null) {
@@ -128,19 +157,18 @@ function clearConsensusTimer() {
   }
 }
 
-watch(unanimousNumericVotes, isConsensus => {
+function clearCelebrationTimers() {
+  clearProudTimer();
   clearConsensusTimer();
-  if (!isConsensus) {
-    showConsensusCelebration.value = false;
-    return;
-  }
+}
 
+function startConsensusCelebration() {
   showConsensusCelebration.value = true;
   consensusTimerId = setTimeout(() => {
     showConsensusCelebration.value = false;
     consensusTimerId = null;
-  }, 3000);
-}, { immediate: true });
+  }, CONSENSUS_CELEBRATION_MS);
+}
 
 const average = computed(() => {
   if (!hasVotes.value) return 0;
@@ -184,6 +212,44 @@ const confidenceValues = computed(() => {
 });
 
 const hasConfidence = computed(() => confidenceValues.value.length > 0);
+
+const unanimousConfidence = computed(() => {
+  if (!hasConfidence.value) {
+    return false;
+  }
+  const firstConfidence = confidenceValues.value[0];
+  return confidenceValues.value.every(confidence => confidence === firstConfidence);
+});
+
+const shouldShowProudCelebration = computed(() => {
+  return unanimousNumericVotes.value && unanimousConfidence.value;
+});
+
+watch(
+  [unanimousNumericVotes, shouldShowProudCelebration],
+  ([isConsensus, isProud]) => {
+    clearCelebrationTimers();
+    showProudCelebration.value = false;
+    showConsensusCelebration.value = false;
+
+    if (!isConsensus) {
+      return;
+    }
+
+    if (isProud) {
+      showProudCelebration.value = true;
+      proudTimerId = setTimeout(() => {
+        showProudCelebration.value = false;
+        proudTimerId = null;
+        startConsensusCelebration();
+      }, PROUD_CELEBRATION_MS);
+      return;
+    }
+
+    startConsensusCelebration();
+  },
+  { immediate: true }
+);
 
 const aggregateConfidencePercent = computed(() => {
   if (!hasConfidence.value) {
@@ -260,7 +326,7 @@ function shouldShowConfidence(userId) {
 }
 
 onUnmounted(() => {
-  clearConsensusTimer();
+  clearCelebrationTimers();
 });
 </script>
 
@@ -268,6 +334,72 @@ onUnmounted(() => {
 .results-display {
   position: relative;
   text-align: center;
+}
+
+.proud-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.proud-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(64, 64, 64, 0.72);
+  animation: proudScrimFade 6s ease-in-out forwards;
+}
+
+.proud-image {
+  position: relative;
+  z-index: 1;
+  max-width: min(70vw, 420px);
+  max-height: min(70vh, 420px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  animation: proudImageFade 6s ease-in-out forwards;
+}
+
+@keyframes proudScrimFade {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes proudImageFade {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  10% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
 }
 
 .consensus-celebration {
